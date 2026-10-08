@@ -70,3 +70,6 @@ def optimize_route(data: RouteOptimizationRequest, user=Depends(get_current_user
     else:
         suggestion = sorted(stops[:-1], key=str.lower) + [stops[-1]]
     return {"suggested_order": suggestion, "method": "heurística de ordenamiento inicial"}
+
+
+
