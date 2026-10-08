@@ -53,3 +53,6 @@ def get_student(student_id: int, db: Session = Depends(get_db), user=Depends(get
     if not student:
         raise HTTPException(404, "Estudiante no encontrado")
     return student
+
+
+
