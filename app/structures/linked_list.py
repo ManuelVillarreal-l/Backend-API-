@@ -25,3 +25,6 @@ class LinkedList:
             out.append(cur.data)
             cur = cur.next
         return out
+
+
+
