@@ -69,3 +69,7 @@ def student_history(student_id: int, db: Session = Depends(get_db), user=Depends
         .order_by(Attendance.timestamp.desc())
         .all()
     )
+
+
+
+
