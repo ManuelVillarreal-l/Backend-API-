@@ -78,3 +78,6 @@ def register_error_handlers(app: FastAPI) -> None:
             content={"detail": detail},
             headers=getattr(exc, "headers", None),
         )
+
+
+
