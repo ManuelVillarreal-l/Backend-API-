@@ -14,3 +14,6 @@ class CircularDoublyList:
         value = self.items[self.index]
         self.index = (self.index + 1) % len(self.items)
         return value
+
+
+
