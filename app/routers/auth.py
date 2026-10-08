@@ -63,3 +63,7 @@ def login_form(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     # The email goes in the 'username' field.
     user = authenticate_user(db, form.username, form.password)
     return {"access_token": create_access_token(user.id), "token_type": "bearer"}
+
+
+
+
