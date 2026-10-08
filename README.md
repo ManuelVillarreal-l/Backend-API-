@@ -104,3 +104,10 @@ In production set `DATABASE_URL` to a PostgreSQL URL; `postgres://` and `postgre
 ## Deployment
 `render.yaml` defines the API service and a PostgreSQL database for Render.
 `.env` is excluded by `.gitignore`; set `DATABASE_URL` and `SECRET_KEY` as environment variables in the cloud.
+
+
+
+
+
+
+
