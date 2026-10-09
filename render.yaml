@@ -16,7 +16,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "120"
+        value: "30"
 
 databases:
   - name: rutasegura-db

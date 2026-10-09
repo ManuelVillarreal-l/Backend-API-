@@ -67,8 +67,8 @@ SPANISH_LABELS = {
     "Auth Error": "Error de autenticación",
     "Token URL:": "URL del token:",
     "Flow:": "Flujo:",
-    "username:": "usuario (correo):",
-    "password:": "contraseña:",
+    "username:": "correo:",
+    "password:": "contraseña (se cifra antes de enviarse):",
     "Client credentials location:": "Ubicación de las credenciales del cliente:",
     "Authorization header": "Encabezado Authorization",
     "client_id:": "client_id (dejar vacío):",
@@ -142,6 +142,51 @@ TRANSLATION_SCRIPT = """
 """
 
 
+# Swagger must never send the real password either: this script intercepts the
+# login/user-creation requests and replaces the password with its SHA-256 digest,
+# exactly like the RutaSegura frontend does.
+PASSWORD_HASH_SCRIPT = r"""
+<script>
+(function () {
+  const originalFetch = window.fetch;
+  const isDigest = (value) => /^[a-f0-9]{64}$/.test(value || "");
+
+  async function sha256(email, password) {
+    const bytes = new TextEncoder().encode(email.trim().toLowerCase() + ":" + password);
+    const hash = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  window.fetch = async function (input, init) {
+    try {
+      const url = typeof input === "string" ? input : input.url;
+      if (init && typeof init.body === "string") {
+        if (/\/api\/auth\/token$/.test(url)) {
+          const params = new URLSearchParams(init.body);
+          const password = params.get("password");
+          const user = params.get("username");
+          if (password && user && !isDigest(password)) {
+            params.set("password", await sha256(user, password));
+            init = Object.assign({}, init, { body: params.toString() });
+          }
+        } else if (/\/api\/(auth\/login|users\/?)$/.test(url)) {
+          const body = JSON.parse(init.body);
+          if (body.password && body.email && !isDigest(body.password)) {
+            body.password = await sha256(body.email, body.password);
+            init = Object.assign({}, init, { body: JSON.stringify(body) });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("No se pudo cifrar la contraseña", error);
+    }
+    return originalFetch.call(this, input, init);
+  };
+})();
+</script>
+"""
+
+
 def register_spanish_docs(app: FastAPI) -> None:
     """Serve the Spanish Swagger UI at /docs. The app must be created with docs_url=None."""
 
@@ -160,7 +205,7 @@ def register_spanish_docs(app: FastAPI) -> None:
         script = TRANSLATION_SCRIPT % json.dumps(SPANISH_LABELS, ensure_ascii=False)
         html = page.body.decode("utf-8")
         html = html.replace("</head>", SPANISH_CSS + "</head>", 1)
-        html = html.replace("</body>", script + "</body>", 1)
+        html = html.replace("</body>", script + PASSWORD_HASH_SCRIPT + "</body>", 1)
         html = html.replace('<html>', '<html lang="es">', 1)
         return HTMLResponse(html)
 

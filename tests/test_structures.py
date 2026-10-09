@@ -45,14 +45,20 @@ def test_circular_list():
     daily_routes = CircularList()
     daily_routes.append("Route 1")
     daily_routes.append("Route 2")
-    assert daily_routes.cycle(2) == ["Route 1", "Route 2", "Route 1", "Route 2"]
+    assert daily_routes.cycle(4) == ["Route 1", "Route 2", "Route 1", "Route 2"]
+    assert daily_routes.cycle(3, start_index=1) == ["Route 2", "Route 1", "Route 2"]
+    assert daily_routes.tail.next is daily_routes.head  # real ring of nodes
 
 
 def test_circular_doubly_list():
     drivers = CircularDoublyList()
     drivers.append("Carlos")
     drivers.append("Pedro")
-    assert [drivers.next() for _ in range(3)] == ["Carlos", "Pedro", "Carlos"]
+    assert [drivers.next() for _ in range(3)] == ["Pedro", "Carlos", "Pedro"]
+    assert drivers.prev() == "Carlos"
+    assert drivers.find(lambda name: name == "Pedro") == "Pedro"
+    assert drivers.next() == "Carlos"  # after the last comes the first
+    assert drivers.head.prev.data == "Pedro"
 
 
 def test_bst():
@@ -86,3 +92,11 @@ def test_graph():
     graph.add_edge("B", "C", 3)
     graph.add_edge("A", "C", 10)
     assert graph.shortest_path("A", "C") == (["A", "B", "C"], 5)
+
+
+def test_avl_prefix_search():
+    tree = AVLTree()
+    for name in ["juan perez", "valentina perez", "valeria ortiz", "sofia lopez"]:
+        tree.insert(name, name.title())
+    assert tree.prefix_search("val") == ["Valentina Perez", "Valeria Ortiz"]
+    assert tree.prefix_search("zz") == []

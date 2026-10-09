@@ -1,10 +1,16 @@
-"""Binary search tree. Use in RutaSegura: search students by key (ID or QR code)."""
+"""Binary search tree.
+
+Use in RutaSegura: index of the students of a trip by QR code, so each scan
+finds the student in O(log n) on average instead of checking the whole list.
+"""
+
 
 class BSTNode:
     def __init__(self, key, value=None):
         self.key, self.value = key, value
         self.left = None
         self.right = None
+
 
 class BST:
     def __init__(self):
@@ -21,6 +27,7 @@ class BST:
             else:
                 node.value = value
             return node
+
         self.root = rec(self.root)
 
     def search(self, key):

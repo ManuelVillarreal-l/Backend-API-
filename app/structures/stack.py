@@ -1,4 +1,5 @@
-"""Stack (LIFO). Use in RutaSegura: undo the latest changes made to a route."""
+"""Stack (LIFO). Use in RutaSegura: undo the most recent boarding/drop-off registered on a trip."""
+
 
 class Stack:
     def __init__(self): self._items = []

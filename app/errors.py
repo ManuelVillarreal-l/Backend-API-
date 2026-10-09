@@ -10,6 +10,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .validation import FIELD_HINTS
+
 # Default English HTTP messages -> Spanish.
 HTTP_MESSAGES = {
     "Not Found": "Recurso no encontrado",
@@ -18,6 +20,7 @@ HTTP_MESSAGES = {
     "Unauthorized": "No autorizado",
     "Forbidden": "Sin permisos",
     "Internal Server Error": "Error interno del servidor",
+    "Request Entity Too Large": "La información enviada es demasiado grande.",
 }
 
 
@@ -38,6 +41,10 @@ def validation_message(error: dict) -> str:
         return "Debe ser un texto"
     if error_type in ("bool_parsing", "bool_type"):
         return "Debe ser verdadero o falso"
+    field_name = str((error.get("loc") or [""])[-1])
+    if field_name == "password" and error_type.startswith("string_"):
+        # The password must always arrive as a SHA-256 digest, never in plain text.
+        return FIELD_HINTS["password"]
     if error_type == "string_too_short":
         return f"Debe tener al menos {ctx.get('min_length')} caracteres"
     if error_type == "string_too_long":
@@ -46,6 +53,23 @@ def validation_message(error: dict) -> str:
         return f"Debe ser mayor o igual a {ctx.get('ge')}"
     if error_type == "less_than_equal":
         return f"Debe ser menor o igual a {ctx.get('le')}"
+    if error_type == "string_pattern_mismatch":
+        field = str((error.get("loc") or [""])[-1])
+        return FIELD_HINTS.get(field, "El formato del dato no es válido.")
+    if error_type == "greater_than":
+        return f"Debe ser mayor que {ctx.get('gt')}"
+    if error_type == "less_than":
+        return f"Debe ser menor que {ctx.get('lt')}"
+    if error_type in ("date_parsing", "date_from_datetime_parsing", "date_type"):
+        return "Fecha inválida. Use el formato AAAA-MM-DD"
+    if error_type in ("datetime_parsing", "datetime_type", "datetime_from_date_parsing"):
+        return "Fecha y hora inválidas"
+    if error_type == "extra_forbidden":
+        return "Este campo no está permitido"
+    if error_type == "too_long":
+        return f"Máximo {ctx.get('max_length')} elementos"
+    if error_type == "too_short":
+        return f"Mínimo {ctx.get('min_length')} elementos"
     if error_type == "json_invalid":
         return "El JSON está mal escrito (revise comas, comillas y llaves)"
     if error_type in ("list_type",):

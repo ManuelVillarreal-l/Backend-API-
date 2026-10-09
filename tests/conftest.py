@@ -12,12 +12,14 @@ import pytest
 TEST_DB = Path(__file__).resolve().parent.parent / "test_rutasegura.db"
 if TEST_DB.exists():
     TEST_DB.unlink()
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
+# TEST_DATABASE_URL lets the same tests run against an empty PostgreSQL database.
+os.environ["DATABASE_URL"] = os.getenv("TEST_DATABASE_URL", f"sqlite:///{TEST_DB.as_posix()}")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.database import engine  # noqa: E402
 from app.main import app  # noqa: E402
+from tests.helpers import login  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -29,17 +31,17 @@ def client():
         TEST_DB.unlink()
 
 
-def login(client, email: str, password: str) -> dict:
-    response = client.post("/api/auth/login", json={"email": email, "password": password})
-    assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
 
 @pytest.fixture(scope="session")
-def coordinator_headers(client):
+def coordinator(client):
     return login(client, "admin@rutasegura.com", "Admin123*")
 
 
 @pytest.fixture(scope="session")
-def guardian_headers(client):
+def driver(client):
+    return login(client, "conductor@rutasegura.com", "Conductor123*")
+
+
+@pytest.fixture(scope="session")
+def guardian(client):
     return login(client, "acudiente@rutasegura.com", "Acudiente123*")

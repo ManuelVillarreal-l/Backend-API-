@@ -1,65 +1,72 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from ..auth import create_access_token, hash_password, verify_password
+from ..auth import EXPIRE_MINUTES, check_lockout, create_access_token, get_current_user, record_attempt, verify_password
 from ..database import get_db
-from ..models import User
-from ..schemas import Login, Token, UserCreate, UserOut
+from ..models import User, utc_now
+from ..schemas import Login, Token, UserOut
+from ..services import audit
 
 router = APIRouter()
 
 
-def normalize_email(email: str) -> str:
-    return email.lower().strip()
-
-
-def authenticate_user(db: Session, email: str, password: str) -> User:
-    # Find the user by email and validate the password.
-    # Shared by /login (JSON) and /token (Swagger form).
-    user = db.query(User).filter(User.email == normalize_email(email)).first()
-    if not user or not verify_password(password, user.password_hash):
-        raise HTTPException(401, "Correo o contraseña incorrectos")
-    return user
-
-
-@router.post("/register", response_model=UserOut, summary="Registrar usuario")
-def register(data: UserCreate, db: Session = Depends(get_db)):
-    email = normalize_email(data.email)
-    if db.query(User).filter(User.email == email).first():
-        raise HTTPException(409, "El correo ya está registrado")
-    user = User(
-        name=data.name,
-        email=email,
-        password_hash=hash_password(data.password),
-        role=data.role,
-    )
-    db.add(user)
+def authenticate(db: Session, request: Request, email: str, digest: str) -> Token:
+    """Validate e-mail + password digest, apply the lockout and issue a 30-minute token."""
+    check_lockout(db, email)
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(digest, user.password_hash):
+        record_attempt(db, email, user, False, request)
+        raise HTTPException(401, "Correo o contraseña incorrectos.")
+    if not user.active:
+        record_attempt(db, email, user, False, request)
+        raise HTTPException(403, "Su cuenta está desactivada. Comuníquese con el coordinador.")
+    record_attempt(db, email, user, True, request)
+    user.last_login_at = utc_now()
+    audit(db, user, "login", "users", user.id)
     db.commit()
-    db.refresh(user)
-    return user
+    return Token(access_token=create_access_token(user), token_type="bearer", expires_in=EXPIRE_MINUTES * 60)
 
 
 @router.post(
     "/login",
     response_model=Token,
-    summary="Iniciar sesión (JSON)",
-    description="Inicio de sesión para la aplicación: recibe el correo y la contraseña en formato JSON.",
+    summary="Iniciar sesión",
+    description=(
+        "Recibe el correo y la contraseña **cifrada en el navegador** (hash SHA-256). "
+        "La contraseña real nunca viaja. El token dura 30 minutos. "
+        "Tras 5 intentos fallidos la cuenta se bloquea 15 minutos."
+    ),
 )
-def login(data: Login, db: Session = Depends(get_db)):
-    # Login used by the frontend: receives JSON with email and password.
-    user = authenticate_user(db, data.email, data.password)
-    return {"access_token": create_access_token(user.id), "token_type": "bearer"}
+def login(data: Login, request: Request, db: Session = Depends(get_db)):
+    return authenticate(db, request, data.email, data.password)
 
 
 @router.post(
     "/token",
     response_model=Token,
-    summary="Iniciar sesión (formulario de Swagger)",
-    description="Lo usa el botón Autorizar. Escriba el correo en el campo username.",
+    summary="Iniciar sesión desde Swagger (botón Autorizar)",
+    description="Swagger cifra la contraseña antes de enviarla. Escriba el correo en el campo username.",
 )
-def login_form(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    # Login used by the Swagger "Authorize" button: receives a form.
-    # The email goes in the 'username' field.
-    user = authenticate_user(db, form.username, form.password)
-    return {"access_token": create_access_token(user.id), "token_type": "bearer"}
+def login_form(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    try:
+        data = Login(email=form.username, password=form.password)
+    except ValidationError:
+        raise HTTPException(422, "Correo con formato inválido o contraseña sin cifrar.")
+    return authenticate(db, request, data.email, data.password)
+
+
+@router.get(
+    "/profile",
+    response_model=UserOut,
+    summary="Perfil del usuario que inició sesión",
+    description=(
+        "Devuelve los datos del usuario dueño del token (nombre, rol, documento, correo). "
+        "No recibe ningún id: el usuario se identifica con el token, así nadie puede consultar el perfil de otra persona. "
+        "La aplicación web lo usa al iniciar sesión para saber qué menú mostrar según el rol."
+    ),
+)
+def current_profile(user: User = Depends(get_current_user)):
+    """Return the user identified by the access token."""
+    return user
