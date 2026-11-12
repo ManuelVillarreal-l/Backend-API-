@@ -44,6 +44,10 @@ Smart rural school transport system. REST API built with FastAPI (version 2.0).
 | BST | QR code lookup when scanning | `POST /api/attendance/scan` |
 | AVL tree | Student search by name or last-name prefix | `GET /api/students/search` |
 | N-ary tree | Institution → campus → grade → students | `GET /api/schools/tree` |
+| Min-heap | Priority queue used by Dijkstra (replaces `heapq`) | `GET /api/routes/{id}/shortest-path` |
+| Matrix (2D array) | Daily attendance: students × school days | `GET /api/attendance/matrix` |
+
+`GET /api/structures` returns this same map (name, file, complexity and endpoint) for the presentation.
 
 ## Project structure
 ```
@@ -62,7 +66,7 @@ app/
   seed.py          Demo data (3 weeks of history)
   routers/         auth, users, catalogs, organization, routes, students,
                    trips, attendance, monitoring, intelligence
-  structures/      The 10 data structures
+  structures/      The 12 data structures (10 of the course + min-heap + matrix)
 tests/             Security, API flow and data structure tests
 ```
 
