@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from tests.helpers import login
 
@@ -177,7 +178,13 @@ def test_data_structure_endpoints(client, coordinator):
     assert monitors[0]["monitor"]["user_id"] == monitors[2]["monitor"]["user_id"]
 
     structures = client.get("/api/structures", headers=coordinator).json()
-    assert len(structures) == 10
+    # The 10 structures of the course plus the min-heap (Dijkstra) and the attendance matrix.
+    assert len(structures) >= 10
+    names = [s["name"] for s in structures]
+    assert len(names) == len(set(names)), "each structure must appear only once"
+    app_dir = Path(__file__).resolve().parent.parent / "app"
+    for structure in structures:
+        assert (app_dir / structure["file"]).is_file(), structure["file"]
 
 
 def test_absence_risk_and_summary(client, coordinator, guardian):
