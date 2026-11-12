@@ -82,7 +82,10 @@ def test_user_edit(client, coordinator):
 
 def test_cancel_scheduled_trip(client, coordinator):
     drivers = client.get("/api/users/?role=driver", headers=coordinator).json()
-    trip = client.post("/api/trips/", json={"route_id": 1, "driver_id": drivers[-1]["id"]}, headers=coordinator)
+    # Other tests leave trips in progress; a driver with one cannot get a new trip (409).
+    busy = {t["driver_id"] for t in client.get("/api/trips/?status=in_progress", headers=coordinator).json()}
+    free_driver = next(d for d in drivers if d["id"] not in busy)
+    trip = client.post("/api/trips/", json={"route_id": 1, "driver_id": free_driver["id"]}, headers=coordinator)
     assert trip.status_code == 201, trip.text
     trip_id = trip.json()["id"]
     assert client.put(f"/api/trips/{trip_id}", json={"monitor_id": None}, headers=coordinator).status_code == 200
