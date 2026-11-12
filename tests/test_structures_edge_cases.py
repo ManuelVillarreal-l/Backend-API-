@@ -7,6 +7,8 @@ from app.structures.circular_doubly_list import CircularDoublyList
 from app.structures.circular_list import CircularList
 from app.structures.doubly_linked_list import DoublyLinkedList
 from app.structures.linked_list import LinkedList
+from app.structures.queue import Queue
+from app.structures.stack import Stack
 
 
 # --- Circular list (monitor rotation) ---------------------------------------------
@@ -110,3 +112,41 @@ def test_doubly_linked_list_return_is_outbound_reversed():
         route.append(stop)
     assert route.backward() == list(reversed(route.forward()))
     assert route.head.prev is None and route.tail.next is None
+
+
+# --- Queue (boarding order) and stack (undo) ---------------------------------------
+
+def test_queue_empty_returns_none():
+    boarding = Queue()
+    assert boarding.is_empty()
+    assert boarding.dequeue() is None
+    assert boarding.peek() is None
+    assert len(boarding) == 0
+
+
+def test_queue_can_be_reused_after_emptying():
+    boarding = Queue()
+    boarding.enqueue("Juan")
+    assert boarding.dequeue() == "Juan"
+    assert boarding.head is None and boarding.tail is None
+    boarding.enqueue("Valentina")
+    boarding.enqueue("Mateo")
+    assert boarding.to_list() == ["Valentina", "Mateo"]
+    assert boarding.peek() == "Valentina"
+
+
+def test_stack_empty_returns_none():
+    undo = Stack()
+    assert undo.is_empty()
+    assert undo.pop() is None
+    assert undo.peek() is None
+
+
+def test_stack_undo_reverses_the_order_of_events():
+    undo = Stack()
+    events = ["abordó Juan", "abordó Valentina", "bajó Juan"]
+    for event in events:
+        undo.push(event)
+    undone = [undo.pop() for _ in range(len(events))]
+    assert undone == list(reversed(events))
+    assert undo.is_empty() and len(undo) == 0
