@@ -3,6 +3,8 @@
 These tests complement tests/test_structures.py and do not need the API or the database.
 """
 
+from app.structures.avl import AVLTree
+from app.structures.bst import BST
 from app.structures.circular_doubly_list import CircularDoublyList
 from app.structures.circular_list import CircularList
 from app.structures.doubly_linked_list import DoublyLinkedList
@@ -150,3 +152,40 @@ def test_stack_undo_reverses_the_order_of_events():
     undone = [undo.pop() for _ in range(len(events))]
     assert undone == list(reversed(events))
     assert undo.is_empty() and len(undo) == 0
+
+
+# --- BST (QR lookup) and AVL (search by name) -------------------------------------
+
+def test_bst_empty_and_missing_keys():
+    index = BST()
+    assert index.search("RS-0001") is None
+    assert index.delete("RS-0001") is False
+    assert index.height() == 0
+
+
+def test_bst_duplicate_key_updates_value_without_growing():
+    index = BST()
+    index.insert("RS-0001", "Juan")
+    index.insert("RS-0001", "Juan Pérez")
+    assert index.size == 1
+    assert index.search("RS-0001") == "Juan Pérez"
+
+
+def test_bst_sorted_inserts_degrade_but_avl_does_not():
+    """Why the project also needs an AVL: sorted inserts turn a BST into a list."""
+    bst, avl = BST(), AVLTree()
+    for n in range(1, 64):
+        bst.insert(n)
+        avl.insert(n)
+    assert bst.height() == 63
+    assert avl.height(avl.root) <= 7  # log2(64) = 6, AVL height <= 1.44 log2(n)
+    assert avl.in_order() == list(range(1, 64))
+
+
+def test_avl_prefix_search_empty_and_limit():
+    names = AVLTree()
+    assert names.prefix_search("ju") == []
+    for i in range(30):
+        names.insert(f"juan {i:02d}", i)
+    assert len(names.prefix_search("juan", limit=5)) == 5
+    assert names.prefix_search("zz") == []
