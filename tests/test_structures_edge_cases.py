@@ -7,10 +7,12 @@ from app.structures.avl import AVLTree
 from app.structures.bst import BST
 from app.structures.circular_doubly_list import CircularDoublyList
 from app.structures.circular_list import CircularList
+from app.structures.attendance_matrix import ABSENT, NO_TRIP, PRESENT, AttendanceMatrix
 from app.structures.doubly_linked_list import DoublyLinkedList
 from app.structures.graph import Graph
 from app.structures.linked_list import LinkedList
 from app.structures.min_heap import MinHeap
+from app.structures.nary_tree import NaryTree
 from app.structures.queue import Queue
 from app.structures.stack import Stack
 
@@ -227,3 +229,37 @@ def test_graph_directed_edge_only_one_way():
     assert roads.shortest_path("A", "B")[0] == ["A", "B"]
     assert roads.shortest_path("B", "A")[0] == []
 
+
+# --- N-ary tree (school hierarchy) and attendance matrix --------------------------
+
+def test_nary_tree_only_root_is_one_leaf():
+    tree = NaryTree("Institución Educativa")
+    assert tree.count_leaves() == 1
+    assert tree.find_child(tree.root, "Sede Central") is None
+    assert tree.to_dict()["children"] == []
+
+
+def test_nary_tree_counts_students_as_leaves():
+    tree = NaryTree("IE Rural")
+    campus = tree.add_child(tree.root, "Sede Central")
+    grade = tree.add_child(campus, "Grado 5")
+    for name in ("Juan", "Valentina", "Mateo"):
+        tree.add_child(grade, name)
+    tree.add_child(tree.add_child(tree.root, "Sede Norte"), "Grado 1")  # grade without students
+    assert tree.count_leaves() == 4
+    assert tree.find_child(campus, "Grado 5") is grade
+
+
+def test_attendance_matrix_shape_rows_and_rate():
+    matrix = AttendanceMatrix(["Juan", "Valentina"], ["lun", "mar", "mié"])
+    assert matrix.shape == (2, 3)
+    assert matrix.attendance_rate("Juan") is None  # no trips yet
+    matrix.fill_column("lun", ABSENT)
+    matrix.set("Juan", "lun", PRESENT)
+    matrix.set("Juan", "mar", PRESENT)
+    matrix.set("Valentina", "mar", ABSENT)
+    assert matrix.row("Juan") == [PRESENT, PRESENT, NO_TRIP]
+    assert matrix.column("lun") == [PRESENT, ABSENT]
+    assert matrix.count_column("mar", ABSENT) == 1
+    assert matrix.attendance_rate("Juan") == 1.0
+    assert matrix.attendance_rate("Valentina") == 0.0
