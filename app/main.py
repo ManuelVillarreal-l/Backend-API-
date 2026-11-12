@@ -5,8 +5,11 @@ load_dotenv()
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 
-from .database import Base, SessionLocal, engine  # noqa: E402
+import logging  # noqa: E402
+
+from .database import DB_ERROR, DB_MODE, Base, SessionLocal, engine  # noqa: E402
 from .docs_es import register_spanish_docs  # noqa: E402
 from .errors import register_error_handlers  # noqa: E402
 from .routers import (  # noqa: E402
@@ -26,9 +29,15 @@ from .seed import seed_demo  # noqa: E402
 MAX_BODY_BYTES = 64 * 1024  # 64 KB: no form of this system needs more
 
 # Create tables and demo data on startup (only when the database is empty).
-Base.metadata.create_all(bind=engine)
-with SessionLocal() as db:
-    seed_demo(db)
+# A failure here is logged instead of crashing, so /health can still explain the problem.
+STARTUP_ERROR: str | None = None
+try:
+    Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db:
+        seed_demo(db)
+except Exception as error:  # noqa: BLE001
+    STARTUP_ERROR = f"{type(error).__name__}: {str(error).splitlines()[0][:200]}"
+    logging.getLogger("rutasegura").exception("Startup database setup failed")
 
 app = FastAPI(
     title="RutaSegura API",
@@ -38,7 +47,7 @@ app = FastAPI(
         "el token dura 30 minutos y la cuenta se bloquea tras 5 intentos fallidos. "
         "Todos los campos se validan con expresiones regulares y límites de longitud."
     ),
-    version="2.0.0",
+    version="3.1.0",
     docs_url=None,  # replaced by the Spanish Swagger page below
     redoc_url=None,
 )
@@ -79,9 +88,34 @@ app.include_router(intelligence.router, prefix="/api", tags=["Inteligencia artif
 
 @app.get("/", tags=["Sistema"], summary="Estado de la API")
 def root():
-    return {"system": "RutaSegura", "status": "online", "version": "2.0.0"}
+    return {"system": "RutaSegura", "status": "online", "version": "3.1.0"}
 
 
-@app.get("/health", tags=["Sistema"], summary="Verificación de salud")
+DB_MODE_TEXT = {
+    "postgresql": "PostgreSQL (base de datos principal)",
+    "sqlite": "SQLite local",
+    "sqlite-fallback": "SQLite de respaldo: la base principal no respondió, se usan los datos de demostración",
+}
+
+
+@app.get(
+    "/health",
+    tags=["Sistema"],
+    summary="Verificación de salud",
+    description="Indica si la API está en línea y qué base de datos está usando.",
+)
 def health():
-    return {"status": "healthy", "service": "rutasegura-api"}
+    database_ok = STARTUP_ERROR is None
+    if database_ok:
+        try:
+            with SessionLocal() as db:
+                db.execute(text("SELECT 1"))
+        except Exception:  # noqa: BLE001
+            database_ok = False
+    return {
+        "status": "healthy" if database_ok else "degraded",
+        "service": "rutasegura-api",
+        "database": DB_MODE,
+        "database_description": DB_MODE_TEXT.get(DB_MODE, DB_MODE),
+        "database_error": DB_ERROR or STARTUP_ERROR,
+    }

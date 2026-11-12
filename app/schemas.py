@@ -497,3 +497,73 @@ class CurrentWeatherOut(BaseModel):
     weather_code: int
     condition: CatalogRef | None
     source: str
+
+
+# ---------------------------------------------------------------------------
+# Updates (edit forms of the CRUD). Every field is optional: only what is sent changes.
+# ---------------------------------------------------------------------------
+
+class UserUpdate(Schema):
+    first_name: PersonName | None = None
+    last_name: PersonName | None = None
+    phone: Phone | None = None
+    email: Email | None = None
+
+
+class SchoolUpdate(Schema):
+    name: Label | None = None
+    municipality: PersonName | None = None
+    phone: Phone | None = None
+
+
+class CampusUpdate(Schema):
+    name: Label | None = None
+    address: ShortText | None = None
+    latitude: Latitude | None = None
+    longitude: Longitude | None = None
+
+
+class VehicleUpdate(Schema):
+    brand: Label | None = None
+    model_year: int | None = Field(default=None, ge=1990, le=2100)
+    capacity: int | None = Field(default=None, ge=1, le=60)
+    active: bool | None = None
+
+
+class RouteUpdate(Schema):
+    name: Label | None = None
+    description: ShortText | None = None
+    vehicle_id: Id | None = None
+    active: bool | None = None
+
+
+class StopUpdate(Schema):
+    name: Label | None = None
+    latitude: Latitude | None = None
+    longitude: Longitude | None = None
+
+
+class StudentUpdate(Schema):
+    first_name: PersonName | None = None
+    last_name: PersonName | None = None
+    grade_code: CatalogCode | None = None
+    route_id: Id | None = None
+    stop_id: Id | None = None
+    active: bool | None = None
+
+
+class TripUpdate(Schema):
+    driver_id: Id | None = None
+    monitor_id: Id | None = None
+    vehicle_id: Id | None = None
+    scheduled_date: date | None = None
+
+
+class AttendanceMatrixOut(BaseModel):
+    route_id: int
+    route_name: str
+    days: list[date]
+    students: list[dict]
+    cells: list[list[str]]
+    present_per_day: list[int]
+    legend: dict[str, str]
