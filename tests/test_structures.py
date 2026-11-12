@@ -100,3 +100,79 @@ def test_avl_prefix_search():
         tree.insert(name, name.title())
     assert tree.prefix_search("val") == ["Valentina Perez", "Valeria Ortiz"]
     assert tree.prefix_search("zz") == []
+
+
+def test_queue_is_linked_and_fifo():
+    queue = Queue()
+    for item in ("a", "b", "c"):
+        queue.enqueue(item)
+    assert queue.dequeue() == "a"
+    queue.enqueue("d")
+    assert queue.to_list() == ["b", "c", "d"]
+    assert len(queue) == 3
+    while not queue.is_empty():
+        queue.dequeue()
+    assert queue.dequeue() is None and queue.tail is None
+
+
+def test_stack_is_linked_and_lifo():
+    stack = Stack()
+    for item in (1, 2, 3):
+        stack.push(item)
+    assert stack.to_list() == [3, 2, 1]
+    assert stack.pop() == 3 and len(stack) == 2
+
+
+def test_min_heap_orders_by_priority():
+    from app.structures.min_heap import MinHeap
+
+    heap = MinHeap()
+    for priority in (5, 1, 4, 2, 3, 0):
+        heap.push(priority, f"n{priority}")
+    assert [heap.pop()[0] for _ in range(6)] == [0, 1, 2, 3, 4, 5]
+    assert heap.pop() is None
+
+
+def test_bst_delete_three_cases():
+    tree = BST()
+    for key in (50, 30, 70, 20, 40, 60, 80):
+        tree.insert(key, str(key))
+    assert tree.delete(20)  # leaf
+    assert tree.delete(30)  # one child
+    assert tree.delete(50)  # two children
+    assert not tree.delete(999)
+    assert tree.in_order() == [40, 60, 70, 80]
+    assert tree.search(50) is None and tree.size == 4
+
+
+def test_avl_delete_keeps_balance():
+    tree = AVLTree()
+    for key in range(1, 101):
+        tree.insert(key, key)
+    for key in range(1, 81):
+        assert tree.delete(key)
+    assert tree.in_order() == list(range(81, 101))
+    assert tree.size == 20
+
+    def check(node):
+        if not node:
+            return 0
+        left, right = check(node.left), check(node.right)
+        assert abs(left - right) <= 1
+        return 1 + max(left, right)
+
+    assert check(tree.root) <= 6
+
+
+def test_attendance_matrix():
+    from app.structures.attendance_matrix import ABSENT, PRESENT, AttendanceMatrix
+
+    matrix = AttendanceMatrix(["ana", "luis"], ["lun", "mar", "mie"])
+    matrix.fill_column("lun", ABSENT)
+    matrix.set("ana", "lun", PRESENT)
+    matrix.fill_column("mar", ABSENT)
+    assert matrix.shape == (2, 3)
+    assert matrix.row("ana") == ["P", "A", "-"]
+    assert matrix.column("lun") == ["P", "A"]
+    assert matrix.attendance_rate("ana") == 0.5
+    assert matrix.attendance_rate("luis") == 0.0
