@@ -116,3 +116,33 @@ converts it to SHA-256 before sending it (the same as the web app).
 ## Deployment
 `render.yaml` defines the API service and the PostgreSQL database for Render
 (`ACCESS_TOKEN_EXPIRE_MINUTES=30`). `.env` is excluded by `.gitignore`.
+
+| Part | URL |
+|---|---|
+| API | https://rutasegura-api-g7n4.onrender.com |
+| Swagger (Spanish) | https://rutasegura-api-g7n4.onrender.com/docs |
+| Health check | https://rutasegura-api-g7n4.onrender.com/health |
+| Web app | https://rutasegura-web-lidi.onrender.com |
+
+The free Render plan stops the service after 15 minutes without traffic; the first request
+after that takes about one minute. Open `/health` a few minutes before a presentation.
+
+### Reading `/health`
+| `database` | Meaning |
+|---|---|
+| `postgresql` | Connected to the database in `DATABASE_URL` (normal production state) |
+| `sqlite-fallback` | `DATABASE_URL` could not be reached (for example, the free Render database expired). The API keeps working with demo data in a local SQLite file, **but changes are lost on every restart** |
+| `sqlite` | Local development with `DATABASE_URL=sqlite:///...` |
+
+### Moving the database to Neon (free, does not expire)
+Free Render PostgreSQL databases expire 30 days after they are created. To move to Neon
+without changing any URL of the API or the web app:
+
+1. Create a project in https://neon.com (region AWS US East) and copy the connection string
+   with *Pooled connection* turned off (it ends in `?sslmode=require`).
+2. Create the tables and demo data: either run the scripts of the `RutaSegura_BaseDatos`
+   repository against that URL, or simply let this API create them on its first start.
+3. In Render → `rutasegura-api` → **Environment**, set `DATABASE_URL` to the Neon URL
+   and save. `app/database.py` already converts `postgres://` / `postgresql://` to the
+   `psycopg` driver.
+4. **Manual Deploy → Deploy latest commit** and check that `/health` shows `postgresql`.
