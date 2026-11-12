@@ -79,7 +79,8 @@ pip install -r requirements.txt
 copy .env.example .env
 uvicorn app.main:app --reload
 ```
-Or double-click `start_server.bat` once the virtual environment exists.
+Or double-click `start_server.bat` once the virtual environment exists
+(`./start_server.sh` on Linux / macOS).
 
 - API: http://127.0.0.1:8000
 - Swagger: http://127.0.0.1:8000/docs
@@ -90,8 +91,16 @@ If you had a `rutasegura.db` from version 1, delete it: the tables changed and i
 ```
 pytest -v
 ```
-Or double-click `run_tests.bat`. Tests use a temporary `test_rutasegura.db`; to run them against
+Or double-click `run_tests.bat` (Windows) or run `./run_tests.sh` (Linux / macOS). Tests use a temporary `test_rutasegura.db`; to run them against
 PostgreSQL set `TEST_DATABASE_URL` to an empty database.
+
+| File | What it checks |
+|---|---|
+| `tests/test_security.py` | Password hashing, token, lockout, permissions by role |
+| `tests/test_api.py` | Full trip flow with GPS, QR, AI and the data-structure endpoints |
+| `tests/test_crud.py` | Create / edit / delete and the attendance matrix endpoint |
+| `tests/test_structures.py` | Normal behaviour of every data structure |
+| `tests/test_structures_edge_cases.py` | Empty structures, one element, unreachable stops, AVL vs BST height |
 
 ## Demo users
 | Role | Email | Password |
