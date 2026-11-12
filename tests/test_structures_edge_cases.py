@@ -8,7 +8,9 @@ from app.structures.bst import BST
 from app.structures.circular_doubly_list import CircularDoublyList
 from app.structures.circular_list import CircularList
 from app.structures.doubly_linked_list import DoublyLinkedList
+from app.structures.graph import Graph
 from app.structures.linked_list import LinkedList
+from app.structures.min_heap import MinHeap
 from app.structures.queue import Queue
 from app.structures.stack import Stack
 
@@ -189,3 +191,39 @@ def test_avl_prefix_search_empty_and_limit():
         names.insert(f"juan {i:02d}", i)
     assert len(names.prefix_search("juan", limit=5)) == 5
     assert names.prefix_search("zz") == []
+
+
+# --- Min-heap and graph (shortest path between stops) -----------------------------
+
+def test_min_heap_empty_and_heap_sort():
+    heap = MinHeap()
+    assert heap.pop() is None
+    for priority in (7, 3, 9, 1, 5, 3):
+        heap.push(priority, f"p{priority}")
+    assert [heap.pop()[0] for _ in range(6)] == [1, 3, 3, 5, 7, 9]
+    assert len(heap) == 0
+
+
+def test_graph_unreachable_stop():
+    roads = Graph()
+    roads.add_edge("Escuela", "El Encano", 4)
+    roads.add_edge("La Laguna", "Santa Lucía", 2)  # another component
+    path, distance = roads.shortest_path("Escuela", "Santa Lucía")
+    assert path == [] and distance == float("inf")
+
+
+def test_graph_path_to_itself_and_cheaper_detour():
+    roads = Graph()
+    roads.add_edge("A", "B", 10)
+    roads.add_edge("A", "C", 2)
+    roads.add_edge("C", "B", 3)
+    assert roads.shortest_path("A", "A") == (["A"], 0)
+    assert roads.shortest_path("A", "B") == (["A", "C", "B"], 5)
+
+
+def test_graph_directed_edge_only_one_way():
+    roads = Graph()
+    roads.add_edge("A", "B", 1, undirected=False)
+    assert roads.shortest_path("A", "B")[0] == ["A", "B"]
+    assert roads.shortest_path("B", "A")[0] == []
+
