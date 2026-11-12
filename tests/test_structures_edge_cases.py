@@ -5,6 +5,8 @@ These tests complement tests/test_structures.py and do not need the API or the d
 
 from app.structures.circular_doubly_list import CircularDoublyList
 from app.structures.circular_list import CircularList
+from app.structures.doubly_linked_list import DoublyLinkedList
+from app.structures.linked_list import LinkedList
 
 
 # --- Circular list (monitor rotation) ---------------------------------------------
@@ -66,3 +68,45 @@ def test_circular_doubly_list_wraps_in_both_directions():
     assert drivers.next() == "D1"  # after the last comes the first
     assert drivers.prev() == "D3"  # and before the first comes the last
     assert drivers.find(lambda d: d == "D9") is None
+
+
+# --- Singly linked list (stops of a route) ----------------------------------------
+
+def test_linked_list_empty():
+    stops = LinkedList()
+    assert stops.to_list() == []
+    assert stops.find_node(lambda s: True) is None
+
+
+def test_linked_list_keeps_insertion_order_and_tail():
+    stops = LinkedList()
+    for name in ("Vereda El Encano", "Vereda Santa Lucía", "Institución Educativa"):
+        stops.append(name)
+    assert stops.to_list()[0] == "Vereda El Encano"
+    assert stops.tail.data == "Institución Educativa"
+    assert stops.tail.next is None
+    node = stops.find_node(lambda s: s.startswith("Vereda S"))
+    assert node.next.data == "Institución Educativa"
+
+
+# --- Doubly linked list (outbound and return itinerary) ---------------------------
+
+def test_doubly_linked_list_empty():
+    route = DoublyLinkedList()
+    assert route.forward() == []
+    assert route.backward() == []
+
+
+def test_doubly_linked_list_single_node_is_head_and_tail():
+    route = DoublyLinkedList()
+    route.append("Escuela")
+    assert route.head is route.tail
+    assert route.forward() == route.backward() == ["Escuela"]
+
+
+def test_doubly_linked_list_return_is_outbound_reversed():
+    route = DoublyLinkedList()
+    for stop in ("P1", "P2", "P3", "P4"):
+        route.append(stop)
+    assert route.backward() == list(reversed(route.forward()))
+    assert route.head.prev is None and route.tail.next is None
