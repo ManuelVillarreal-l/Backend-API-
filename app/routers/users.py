@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import COORDINATOR, DRIVER, hash_password, require_roles
 from ..database import get_db
 from ..models import Driver, Role, User, Vehicle
-from ..schemas import DriverCreate, DriverOut, UserCreate, UserOut, UserStatusUpdate
+from ..schemas import UserUpdate, DriverCreate, DriverOut, UserCreate, UserOut, UserStatusUpdate
 from ..services import audit, catalog_item, get_or_404
 from ..structures.circular_doubly_list import CircularDoublyList
 
@@ -50,6 +50,24 @@ def create_user(data: UserCreate, db: Session = Depends(get_db), user=Depends(co
     db.commit()
     db.refresh(new_user)
     return new_user
+
+
+@router.put("/{user_id}", response_model=UserOut, summary="Editar datos de un usuario")
+def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    target = get_or_404(db, User, user_id, "Usuario")
+    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    if "email" in changes and changes["email"] != target.email:
+        raise HTTPException(
+            422,
+            "El correo no se puede cambiar porque la contraseña está cifrada junto con él. "
+            "Cree un usuario nuevo y desactive este.",
+        )
+    for field, value in changes.items():
+        setattr(target, field, value)
+    audit(db, user, "update", "users", target.id, ", ".join(changes) or None)
+    db.commit()
+    db.refresh(target)
+    return target
 
 
 @router.patch("/{user_id}/status", response_model=UserOut, summary="Activar o desactivar un usuario")

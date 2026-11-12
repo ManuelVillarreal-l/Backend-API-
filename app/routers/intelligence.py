@@ -69,6 +69,11 @@ def current_weather(
 
 
 STRUCTURES = [
+    {"name": "Matriz (arreglo bidimensional)", "file": "structures/attendance_matrix.py", "complexity": "O(1) por celda",
+     "use": "Asistencia diaria: filas = estudiantes, columnas = días hábiles (P/A/-).",
+     "endpoint": "GET /api/attendance/matrix?route_id={id}"},
+    {"name": "Montículo mínimo (heap)", "file": "structures/min_heap.py", "complexity": "O(log n) por operación",
+     "use": "Cola de prioridad propia que usa Dijkstra (reemplaza a heapq).", "endpoint": "GET /api/routes/{id}/shortest-path"},
     {"name": "Grafo + Dijkstra", "file": "structures/graph.py", "complexity": "O((V + E) log V)",
      "use": "Camino más corto entre paradas usando los tramos de vía.", "endpoint": "GET /api/routes/{id}/shortest-path"},
     {"name": "Cola (FIFO)", "file": "structures/queue.py", "complexity": "O(1) por operación",
@@ -83,9 +88,9 @@ STRUCTURES = [
      "use": "Turnos de monitores por día; tras el último vuelve al primero.", "endpoint": "GET /api/trips/rotation/monitors"},
     {"name": "Lista circular doble", "file": "structures/circular_doubly_list.py", "complexity": "O(1) siguiente/anterior",
      "use": "Rotación de conductores: anterior y siguiente turno.", "endpoint": "GET /api/users/drivers/rotation"},
-    {"name": "Árbol binario de búsqueda", "file": "structures/bst.py", "complexity": "O(log n) promedio",
+    {"name": "Árbol binario de búsqueda", "file": "structures/bst.py", "complexity": "O(log n) promedio (insertar, buscar, eliminar)",
      "use": "Encontrar al estudiante por su código QR al escanear.", "endpoint": "POST /api/attendance/scan"},
-    {"name": "Árbol AVL", "file": "structures/avl.py", "complexity": "O(log n) garantizado",
+    {"name": "Árbol AVL", "file": "structures/avl.py", "complexity": "O(log n) garantizado (insertar, buscar, eliminar)",
      "use": "Búsqueda de estudiantes por nombre mientras se escribe.", "endpoint": "GET /api/students/search"},
     {"name": "Árbol N-ario", "file": "structures/nary_tree.py", "complexity": "O(n) recorrido",
      "use": "Jerarquía institución → sede → grado → estudiantes.", "endpoint": "GET /api/schools/tree"},

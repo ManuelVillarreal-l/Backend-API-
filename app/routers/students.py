@@ -15,7 +15,7 @@ from .. import ai
 from ..auth import COORDINATOR, GUARDIAN, get_current_user, require_roles
 from ..database import get_db
 from ..models import Attendance, Campus, Route, Stop, Student, StudentGuardian, User
-from ..schemas import AbsenceRiskOut, CatalogRef, AttendanceOut, GuardianOut, StudentCreate, StudentOut
+from ..schemas import StudentUpdate, AbsenceRiskOut, CatalogRef, AttendanceOut, GuardianOut, StudentCreate, StudentOut
 from ..services import audit, catalog_item, ensure_can_see_student, get_or_404, visible_students_query
 from ..structures.avl import AVLTree
 
@@ -78,7 +78,7 @@ def search_students(
     user: User = Depends(get_current_user),
 ):
     index = AVLTree()
-    for student in visible_students_query(db, user).all():
+    for student in visible_students_query(db, user).filter(Student.active.is_(True)).all():
         index.insert((normalize(student.first_name + " " + student.last_name), student.id), student)
         index.insert((normalize(student.last_name + " " + student.first_name), student.id), student)
     found, seen = [], set()
@@ -178,3 +178,53 @@ def student_absence_risk(student_id: int, db: Session = Depends(get_db), user: U
     student = get_or_404(db, Student, student_id, "Estudiante")
     ensure_can_see_student(db, user, student)
     return ai.absence_risk(db, student)
+
+
+@router.put("/{student_id}", response_model=StudentOut, summary="Editar estudiante (solo coordinador)")
+def update_student(
+    student_id: int, data: StudentUpdate, db: Session = Depends(get_db), user: User = Depends(coordinator_only)
+):
+    student = get_or_404(db, Student, student_id, "Estudiante")
+    changes = data.model_dump(exclude_unset=True)
+    if "grade_code" in changes:
+        if changes["grade_code"] is not None:
+            student.grade_id = catalog_item(db, "grades", changes["grade_code"]).id
+        changes.pop("grade_code")
+    route_id = changes.get("route_id", student.route_id)
+    stop_id = changes.get("stop_id", student.stop_id)
+    if "route_id" in changes and "stop_id" not in changes and route_id != student.route_id:
+        stop_id = None  # the old stop belongs to the old route
+        changes["stop_id"] = None
+    if route_id:
+        get_or_404(db, Route, route_id, "Ruta")
+    if stop_id:
+        stop = get_or_404(db, Stop, stop_id, "Parada")
+        if stop.route_id != route_id:
+            raise HTTPException(422, "La parada no pertenece a la ruta elegida.")
+    for field in ("first_name", "last_name", "route_id", "stop_id", "active"):
+        if field in changes and (changes[field] is not None or field in ("route_id", "stop_id")):
+            setattr(student, field, changes[field])
+    audit(db, user, "update", "students", student.id, ", ".join(data.model_dump(exclude_unset=True)) or None)
+    db.commit()
+    db.refresh(student)
+    return student_out(student)
+
+
+@router.delete(
+    "/{student_id}",
+    response_model=StudentOut,
+    summary="Retirar estudiante (solo coordinador)",
+    description=(
+        "Marca al estudiante como retirado (inactivo) y lo quita del índice AVL de búsqueda. "
+        "Su historial de asistencia se conserva."
+    ),
+)
+def withdraw_student(student_id: int, db: Session = Depends(get_db), user: User = Depends(coordinator_only)):
+    student = get_or_404(db, Student, student_id, "Estudiante")
+    if not student.active:
+        raise HTTPException(409, f"{student.full_name} ya estaba retirado.")
+    student.active = False
+    audit(db, user, "withdraw", "students", student.id, student.full_name)
+    db.commit()
+    db.refresh(student)
+    return student_out(student)

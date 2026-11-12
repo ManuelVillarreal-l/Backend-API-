@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from .. import ai
 from ..auth import COORDINATOR, get_current_user, require_roles
 from ..database import get_db
-from ..models import Campus, Route, RouteSegment, Stop, Vehicle
-from ..schemas import RouteCreate, RouteOptimizationOut, RouteOut, SegmentCreate, SegmentOut, StopCreate, StopOut
+from ..models import Campus, Route, RouteSegment, Stop, Student, Vehicle
+from ..schemas import RouteUpdate, StopUpdate, RouteCreate, RouteOptimizationOut, RouteOut, SegmentCreate, SegmentOut, StopCreate, StopOut
 from ..services import audit, get_or_404, route_or_404, route_stops
 from ..structures.doubly_linked_list import DoublyLinkedList
 from ..structures.graph import Graph
@@ -163,3 +163,86 @@ def itinerary(
 def optimize(route_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
     route_or_404(db, route_id)
     return ai.optimize_route(db, route_id)
+
+
+# ---------------------------------------------------------------------------
+# Edit / delete (CRUD)
+# ---------------------------------------------------------------------------
+
+@router.put("/stops/{stop_id}", response_model=StopOut, summary="Editar parada")
+def update_stop(stop_id: int, data: StopUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    stop = get_or_404(db, Stop, stop_id, "Parada")
+    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    for field, value in changes.items():
+        setattr(stop, field, value)
+    audit(db, user, "update", "stops", stop.id, ", ".join(changes) or None)
+    db.commit()
+    db.refresh(stop)
+    return stop
+
+
+@router.delete(
+    "/stops/{stop_id}",
+    summary="Eliminar parada",
+    description="Solo si ningún estudiante activo la usa. Las paradas siguientes se renumeran.",
+)
+def delete_stop(stop_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    stop = get_or_404(db, Stop, stop_id, "Parada")
+    in_use = db.query(Student).filter(Student.stop_id == stop.id, Student.active.is_(True)).count()
+    if in_use:
+        raise HTTPException(409, f"No se puede eliminar: {in_use} estudiante(s) suben en esta parada.")
+    route_id, order, name = stop.route_id, stop.order, stop.name
+    db.query(RouteSegment).filter(
+        (RouteSegment.from_stop_id == stop.id) | (RouteSegment.to_stop_id == stop.id)
+    ).delete(synchronize_session=False)
+    db.delete(stop)
+    db.flush()
+    for later in db.query(Stop).filter(Stop.route_id == route_id, Stop.order > order).order_by(Stop.order):
+        later.order -= 1
+    audit(db, user, "delete", "stops", stop_id, name)
+    db.commit()
+    return {"deleted": True, "stop_id": stop_id}
+
+
+@router.delete("/{route_id}/segments/{segment_id}", summary="Eliminar tramo de vía")
+def delete_segment(route_id: int, segment_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    segment = get_or_404(db, RouteSegment, segment_id, "Tramo")
+    if segment.route_id != route_id:
+        raise HTTPException(404, "Tramo no encontrado en esta ruta.")
+    db.delete(segment)
+    audit(db, user, "delete", "route_segments", segment_id)
+    db.commit()
+    return {"deleted": True, "segment_id": segment_id}
+
+
+@router.put("/{route_id}", response_model=RouteOut, summary="Editar ruta")
+def update_route(route_id: int, data: RouteUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    route = route_or_404(db, route_id)
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("name") and changes["name"] != route.name:
+        if db.query(Route).filter(Route.name == changes["name"], Route.id != route.id).first():
+            raise HTTPException(409, "Ya existe una ruta con ese nombre.")
+    if changes.get("vehicle_id"):
+        get_or_404(db, Vehicle, changes["vehicle_id"], "Vehículo")
+    for field, value in changes.items():
+        if value is not None or field in ("vehicle_id", "description"):
+            setattr(route, field, value)
+    audit(db, user, "update", "routes", route.id, ", ".join(changes) or None)
+    db.commit()
+    db.refresh(route)
+    return route
+
+
+@router.delete(
+    "/{route_id}",
+    response_model=RouteOut,
+    summary="Desactivar ruta",
+    description="La ruta queda inactiva (no se borra) para conservar el historial de recorridos.",
+)
+def deactivate_route(route_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    route = route_or_404(db, route_id)
+    route.active = False
+    audit(db, user, "deactivate", "routes", route.id, route.name)
+    db.commit()
+    db.refresh(route)
+    return route

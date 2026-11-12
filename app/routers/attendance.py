@@ -1,17 +1,18 @@
 """Boarding and drop-off: manual, by QR code (binary search tree) and offline sync."""
 
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..auth import STAFF, require_roles
+from ..auth import COORDINATOR, STAFF, require_roles
 from ..database import get_db
-from ..models import Attendance, Student, Trip, User, utc_now
+from ..models import Attendance, EventType, Route, Student, Trip, User, utc_now
 from ..operations import register_event, student_state
-from ..schemas import AttendanceCreate, AttendanceOut, OfflineSync, ScanCreate, SyncResult
+from ..schemas import AttendanceMatrixOut, AttendanceCreate, AttendanceOut, OfflineSync, ScanCreate, SyncResult
 from ..services import get_or_404
+from ..structures.attendance_matrix import ABSENT, NO_TRIP, PRESENT, AttendanceMatrix
 from ..structures.bst import BST
 
 router = APIRouter()
@@ -123,3 +124,78 @@ def sync_offline(data: OfflineSync, db: Session = Depends(get_db), user: User = 
             db.rollback()
             rejected.append(f"{item.client_event_id}: {error.detail}")
     return SyncResult(saved=saved, duplicated=duplicated, rejected=rejected)
+
+
+@router.get(
+    "/matrix",
+    response_model=AttendanceMatrixOut,
+    summary="Matriz de asistencia diaria (estudiante × día)",
+    description=(
+        "Arma una matriz (arreglo bidimensional): cada fila es un estudiante de la ruta y cada columna "
+        "un día hábil. P = subió al bus ese día, A = hubo recorrido pero no subió, - = no hubo recorrido."
+    ),
+)
+def attendance_matrix(
+    route_id: int = Query(ge=1),
+    days: int = Query(10, ge=1, le=60),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(COORDINATOR)),
+):
+    route = get_or_404(db, Route, route_id, "Ruta")
+
+    school_days: list[date] = []
+    day = date.today()
+    while len(school_days) < days:
+        if day.weekday() < 5:
+            school_days.append(day)
+        day -= timedelta(days=1)
+    school_days.reverse()
+
+    students = (
+        db.query(Student)
+        .filter(Student.route_id == route.id, Student.active.is_(True))
+        .order_by(Student.last_name, Student.first_name)
+        .all()
+    )
+    matrix = AttendanceMatrix([s.id for s in students], school_days)
+
+    trips = (
+        db.query(Trip)
+        .filter(Trip.route_id == route.id, Trip.scheduled_date >= school_days[0], Trip.scheduled_date <= school_days[-1])
+        .all()
+    )
+    trip_day = {t.id: t.scheduled_date for t in trips if t.status.code != "scheduled"}
+    for trip_date in set(trip_day.values()):
+        if trip_date in matrix.column_index:
+            matrix.fill_column(trip_date, ABSENT)
+
+    if trip_day and students:
+        boardings = (
+            db.query(Attendance.student_id, Attendance.trip_id)
+            .join(EventType, Attendance.event_type_id == EventType.id)
+            .filter(EventType.code == "boarding", Attendance.trip_id.in_(list(trip_day)))
+            .all()
+        )
+        for student_id, trip_id in boardings:
+            trip_date = trip_day[trip_id]
+            if student_id in matrix.row_index and trip_date in matrix.column_index:
+                matrix.set(student_id, trip_date, PRESENT)
+
+    return AttendanceMatrixOut(
+        route_id=route.id,
+        route_name=route.name,
+        days=school_days,
+        students=[
+            {
+                "student_id": s.id,
+                "full_name": s.full_name,
+                "present": matrix.count_row(s.id, PRESENT),
+                "absent": matrix.count_row(s.id, ABSENT),
+                "attendance_rate": matrix.attendance_rate(s.id),
+            }
+            for s in students
+        ],
+        cells=matrix.to_list(),
+        present_per_day=[matrix.count_column(d, PRESENT) for d in school_days],
+        legend={PRESENT: "Presente", ABSENT: "Ausente", NO_TRIP: "Sin recorrido"},
+    )

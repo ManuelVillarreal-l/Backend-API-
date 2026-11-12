@@ -9,7 +9,7 @@ from ..auth import COORDINATOR, DRIVER, GUARDIAN, MONITOR, STAFF, get_current_us
 from ..database import get_db
 from ..models import Attendance, Route, Stop, Student, Trip, User, Vehicle, VehicleLocation, utc_now
 from ..operations import check_approaching, estimate_arrival, student_state
-from ..schemas import AttendanceOut, EtaOut, LocationCreate, LocationOut, TripCreate, TripOut, TripStart
+from ..schemas import TripUpdate, AttendanceOut, EtaOut, LocationCreate, LocationOut, TripCreate, TripOut, TripStart
 from ..services import (
     audit,
     catalog_item,
@@ -109,6 +109,59 @@ def create_trip(data: TripCreate, db: Session = Depends(get_db), user: User = De
 @router.get("/{trip_id}", response_model=TripOut, summary="Ver un recorrido")
 def get_trip(trip_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return trip_for(db, user, trip_id)
+
+
+@router.put("/{trip_id}", response_model=TripOut, summary="Editar recorrido programado (solo coordinador)")
+def update_trip(
+    trip_id: int, data: TripUpdate, db: Session = Depends(get_db), user: User = Depends(require_roles(COORDINATOR))
+):
+    trip = get_or_404(db, Trip, trip_id, "Recorrido")
+    ensure_trip_status(trip, "scheduled")
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("driver_id"):
+        driver = get_or_404(db, User, changes["driver_id"], "Conductor")
+        if driver.role.code != DRIVER or not driver.active:
+            raise HTTPException(422, "El usuario elegido no es un conductor activo.")
+    if changes.get("monitor_id"):
+        monitor = get_or_404(db, User, changes["monitor_id"], "Monitor")
+        if monitor.role.code != MONITOR:
+            raise HTTPException(422, "El usuario elegido como monitor no tiene ese rol.")
+    if changes.get("vehicle_id"):
+        get_or_404(db, Vehicle, changes["vehicle_id"], "Vehículo")
+    if changes.get("scheduled_date"):
+        scheduled = changes["scheduled_date"]
+        if scheduled < date.today() - timedelta(days=1) or scheduled > date.today() + timedelta(days=60):
+            raise HTTPException(422, "La fecha debe estar entre hoy y los próximos 60 días.")
+    for field, value in changes.items():
+        if value is not None or field in ("monitor_id", "vehicle_id"):
+            setattr(trip, field, value)
+    audit(db, user, "update", "trips", trip.id, ", ".join(changes) or None)
+    db.commit()
+    db.refresh(trip)
+    return trip
+
+
+@router.delete(
+    "/{trip_id}",
+    summary="Cancelar recorrido programado (solo coordinador)",
+    description="Solo se pueden cancelar recorridos que no han iniciado. Se avisa a los acudientes.",
+)
+def cancel_trip(trip_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(COORDINATOR))):
+    trip = get_or_404(db, Trip, trip_id, "Recorrido")
+    ensure_trip_status(trip, "scheduled")
+    route = db.get(Route, trip.route_id)
+    student_ids = [s.id for s in db.query(Student).filter(Student.route_id == trip.route_id, Student.active.is_(True))]
+    notify(
+        db,
+        guardians_of(db, student_ids),
+        "trip_cancelled",
+        "Recorrido cancelado",
+        f"El recorrido de la {route.name} del {trip.scheduled_date.isoformat()} fue cancelado.",
+    )
+    db.delete(trip)
+    audit(db, user, "cancel", "trips", trip_id, route.name)
+    db.commit()
+    return {"cancelled": True, "trip_id": trip_id}
 
 
 @router.post(

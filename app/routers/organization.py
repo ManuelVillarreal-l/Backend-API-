@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import COORDINATOR, get_current_user, require_roles
 from ..database import get_db
-from ..models import Campus, Grade, School, Student, Vehicle
-from ..schemas import CampusCreate, CampusOut, SchoolCreate, SchoolOut, VehicleCreate, VehicleOut
+from ..models import Campus, Grade, Route, School, Student, Vehicle
+from ..schemas import CampusUpdate, SchoolUpdate, VehicleUpdate, CampusCreate, CampusOut, SchoolCreate, SchoolOut, VehicleCreate, VehicleOut
 from ..services import audit, get_or_404
 from ..structures.nary_tree import NaryTree
 
@@ -86,6 +86,82 @@ def create_vehicle(data: VehicleCreate, db: Session = Depends(get_db), user=Depe
     db.add(vehicle)
     db.flush()
     audit(db, user, "create", "vehicles", vehicle.id, vehicle.plate)
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+
+# ---------------------------------------------------------------------------
+# Edit / delete (CRUD)
+# ---------------------------------------------------------------------------
+
+def apply_changes(item, data) -> list[str]:
+    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    for field, value in changes.items():
+        setattr(item, field, value)
+    return list(changes)
+
+
+@router.put("/schools/{school_id}", response_model=SchoolOut, summary="Editar institución")
+def update_school(school_id: int, data: SchoolUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    school = get_or_404(db, School, school_id, "Institución")
+    if data.name and db.query(School).filter(School.name == data.name, School.id != school.id).first():
+        raise HTTPException(409, "Ya existe una institución con ese nombre.")
+    fields = apply_changes(school, data)
+    audit(db, user, "update", "schools", school.id, ", ".join(fields) or None)
+    db.commit()
+    db.refresh(school)
+    return school
+
+
+@router.delete("/schools/{school_id}", response_model=SchoolOut, summary="Desactivar institución")
+def deactivate_school(school_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    school = get_or_404(db, School, school_id, "Institución")
+    school.active = False
+    audit(db, user, "deactivate", "schools", school.id)
+    db.commit()
+    db.refresh(school)
+    return school
+
+
+@router.put("/campuses/{campus_id}", response_model=CampusOut, summary="Editar sede")
+def update_campus(campus_id: int, data: CampusUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    campus = get_or_404(db, Campus, campus_id, "Sede")
+    fields = apply_changes(campus, data)
+    audit(db, user, "update", "campuses", campus.id, ", ".join(fields) or None)
+    db.commit()
+    db.refresh(campus)
+    return campus
+
+
+@router.delete("/campuses/{campus_id}", summary="Eliminar sede (solo si no tiene estudiantes ni rutas)")
+def delete_campus(campus_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    campus = get_or_404(db, Campus, campus_id, "Sede")
+    students = db.query(Student).filter(Student.campus_id == campus.id).count()
+    routes = db.query(Route).filter(Route.campus_id == campus.id).count()
+    if students or routes:
+        raise HTTPException(409, f"No se puede eliminar: la sede tiene {students} estudiante(s) y {routes} ruta(s).")
+    db.delete(campus)
+    audit(db, user, "delete", "campuses", campus_id)
+    db.commit()
+    return {"deleted": True, "campus_id": campus_id}
+
+
+@router.put("/vehicles/{vehicle_id}", response_model=VehicleOut, summary="Editar vehículo")
+def update_vehicle(vehicle_id: int, data: VehicleUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    vehicle = get_or_404(db, Vehicle, vehicle_id, "Vehículo")
+    fields = apply_changes(vehicle, data)
+    audit(db, user, "update", "vehicles", vehicle.id, ", ".join(fields) or None)
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+
+@router.delete("/vehicles/{vehicle_id}", response_model=VehicleOut, summary="Desactivar vehículo")
+def deactivate_vehicle(vehicle_id: int, db: Session = Depends(get_db), user=Depends(coordinator_only)):
+    vehicle = get_or_404(db, Vehicle, vehicle_id, "Vehículo")
+    vehicle.active = False
+    audit(db, user, "deactivate", "vehicles", vehicle.id, vehicle.plate)
     db.commit()
     db.refresh(vehicle)
     return vehicle
