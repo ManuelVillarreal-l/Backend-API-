@@ -53,8 +53,13 @@ def test_route_and_stop_crud(client, coordinator):
     assert client.delete(f"/api/routes/{route['id']}", headers=coordinator).json()["active"] is False
 
 
+# Students used by other test files; this test must not rename or withdraw them.
+PROTECTED_STUDENTS = {"Juan Pérez", "Valentina Pérez"}
+
+
 def test_student_edit_and_withdraw(client, coordinator, guardian):
-    student = client.get("/api/students/", headers=coordinator).json()[-1]
+    students = client.get("/api/students/", headers=coordinator).json()
+    student = next(s for s in reversed(students) if s["full_name"] not in PROTECTED_STUDENTS)
     assert client.put(f"/api/students/{student['id']}", json={"first_name": "Nuevo"}, headers=guardian).status_code == 403
     edited = client.put(f"/api/students/{student['id']}", json={"first_name": "Nuevo"}, headers=coordinator)
     assert edited.status_code == 200, edited.text
