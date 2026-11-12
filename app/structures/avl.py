@@ -73,6 +73,50 @@ class AVLTree:
 
         self.root = rec(self.root)
 
+    def _rebalance(self, node):
+        """Restore the AVL property at node after an insertion or a deletion."""
+        self.update(node)
+        balance = self.balance(node)
+        if balance > 1:
+            if self.balance(node.left) < 0:
+                node.left = self.rotate_left(node.left)
+            return self.rotate_right(node)
+        if balance < -1:
+            if self.balance(node.right) > 0:
+                node.right = self.rotate_right(node.right)
+            return self.rotate_left(node)
+        return node
+
+    def delete(self, key) -> bool:
+        """Remove a key (e.g. a student who withdraws) and rebalance on the way up. O(log n)."""
+        removed = False
+
+        def rec(node, key):
+            nonlocal removed
+            if not node:
+                return None
+            if key < node.key:
+                node.left = rec(node.left, key)
+            elif key > node.key:
+                node.right = rec(node.right, key)
+            else:
+                removed = True
+                if not node.left:
+                    return node.right
+                if not node.right:
+                    return node.left
+                successor = node.right
+                while successor.left:
+                    successor = successor.left
+                node.key, node.value = successor.key, successor.value
+                node.right = rec(node.right, successor.key)
+            return self._rebalance(node)
+
+        self.root = rec(self.root, key)
+        if removed:
+            self.size -= 1
+        return removed
+
     def search(self, key):
         node = self.root
         while node:

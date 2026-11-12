@@ -1,6 +1,6 @@
-"""Weighted graph with Dijkstra. Use in RutaSegura: rural road network and shortest route between stops."""
+"""Weighted graph (adjacency list) with Dijkstra over our own MinHeap. Use in RutaSegura: rural road network and shortest route between stops."""
 
-import heapq
+from .min_heap import MinHeap
 
 class Graph:
     def __init__(self):
@@ -14,10 +14,11 @@ class Graph:
     def shortest_path(self, start, end):
         dist = {start: 0}
         previous = {}
-        queue = [(0, start)]
+        queue = MinHeap()
+        queue.push(0, start)
 
         while queue:
-            distance, node = heapq.heappop(queue)
+            distance, node = queue.pop()
             if distance != dist.get(node):
                 continue
             if node == end:
@@ -28,7 +29,7 @@ class Graph:
                 if new_distance < dist.get(neighbor, float("inf")):
                     dist[neighbor] = new_distance
                     previous[neighbor] = node
-                    heapq.heappush(queue, (new_distance, neighbor))
+                    queue.push(new_distance, neighbor)
 
         if end not in dist:
             return [], float("inf")
