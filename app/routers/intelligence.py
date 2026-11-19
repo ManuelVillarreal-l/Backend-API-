@@ -36,6 +36,8 @@ def predict_delay(data: DelayPredictionRequest, db: Session = Depends(get_db), u
     if data.route_id:
         get_or_404(db, Route, data.route_id, "Ruta")
     result = ai.predict_delay(db, weather, road, data.stops_remaining, data.hour)
+    if data.preview:
+        return result
     db.add(
         DelayPrediction(
             route_id=data.route_id,

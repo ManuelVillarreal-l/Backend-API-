@@ -140,6 +140,17 @@ def test_ai_predictions_are_saved_in_the_history(client, coordinator):
     assert latest["weather"] and latest["road_condition"]
 
 
+def test_preview_predictions_are_not_saved(client, coordinator):
+    before = client.get("/api/ai/predictions", headers=coordinator).json()["total"]
+    preview = client.post(
+        "/api/ai/delay",
+        json={"weather_code": "clear", "road_condition_code": "good", "stops_remaining": 2, "preview": True},
+        headers=coordinator,
+    )
+    assert preview.status_code == 200
+    assert client.get("/api/ai/predictions", headers=coordinator).json()["total"] == before
+
+
 # --- Automatic warnings -------------------------------------------------------------
 
 def test_start_with_bad_conditions_warns_of_delay_and_finish_reports_missed_children(client, coordinator):

@@ -465,6 +465,8 @@ class DelayPredictionRequest(Schema):
     road_condition_code: CatalogCode
     stops_remaining: int = Field(ge=0, le=50)
     hour: int = Field(default=6, ge=0, le=23)
+    # True for the live preview shown while the driver chooses the weather: it is not saved.
+    preview: bool = False
 
 
 class DelayPredictionOut(BaseModel):
