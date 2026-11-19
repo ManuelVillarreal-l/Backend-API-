@@ -3,6 +3,7 @@
 import math
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import models
@@ -56,6 +57,19 @@ def catalog_item(db: Session, catalog: str, code: str):
     if not item:
         raise HTTPException(422, f"El {CATALOG_LABELS[catalog]} '{code}' no existe o está inactivo.")
     return item
+
+
+def lock_trip(db: Session, trip):
+    """Lock the trip row until the end of the request so actions on it run one after another.
+
+    Without this, ten taps on "Iniciar recorrido" (or the same card scanned twice at once)
+    could all pass the status checks before any of them saves. With the lock, the second
+    request waits, re-reads the trip and gets the normal "ya fue iniciado" answer.
+    PostgreSQL applies FOR UPDATE; SQLite ignores it (it already writes one at a time).
+    """
+    db.execute(select(type(trip).id).where(type(trip).id == trip.id).with_for_update())
+    db.refresh(trip)
+    return trip
 
 
 def get_or_404(db: Session, model, item_id: int, label: str):

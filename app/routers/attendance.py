@@ -11,7 +11,7 @@ from ..database import get_db
 from ..models import Attendance, EventType, Route, Student, Trip, User, utc_now
 from ..operations import register_event, student_state
 from ..schemas import AttendanceMatrixOut, AttendanceCreate, AttendanceOut, OfflineSync, ScanCreate, SyncResult
-from ..services import get_or_404
+from ..services import get_or_404, lock_trip
 from ..structures.attendance_matrix import ABSENT, NO_TRIP, PRESENT, AttendanceMatrix
 from ..structures.bst import BST
 
@@ -29,7 +29,7 @@ def existing_event(db: Session, client_event_id: str | None) -> Attendance | Non
 def register_manual(data: AttendanceCreate, db: Session = Depends(get_db), user: User = Depends(staff_only)):
     if (duplicate := existing_event(db, data.client_event_id)) is not None:
         return duplicate
-    trip = get_or_404(db, Trip, data.trip_id, "Recorrido")
+    trip = lock_trip(db, get_or_404(db, Trip, data.trip_id, "Recorrido"))
     student = get_or_404(db, Student, data.student_id, "Estudiante")
     event = register_event(
         db, user, trip, student, data.event_type_code, data.method_code,
@@ -53,7 +53,9 @@ def register_manual(data: AttendanceCreate, db: Session = Depends(get_db), user:
 def scan_qr(data: ScanCreate, db: Session = Depends(get_db), user: User = Depends(staff_only)):
     if (duplicate := existing_event(db, data.client_event_id)) is not None:
         return duplicate
-    trip = get_or_404(db, Trip, data.trip_id, "Recorrido")
+    trip = lock_trip(db, get_or_404(db, Trip, data.trip_id, "Recorrido"))
+    if (duplicate := existing_event(db, data.client_event_id)) is not None:
+        return duplicate  # the same scan arrived twice: the first one already saved it
     index = BST()
     for student in db.query(Student).filter(Student.route_id == trip.route_id, Student.active.is_(True)):
         index.insert(student.qr_code, student)
@@ -110,6 +112,7 @@ def sync_offline(data: OfflineSync, db: Session = Depends(get_db), user: User = 
             rejected.append(f"{item.client_event_id}: recorrido o estudiante inexistente.")
             continue
         try:
+            lock_trip(db, trip)
             register_event(
                 db, user, trip, student, item.event_type_code, item.method_code,
                 item.latitude, item.longitude, item.client_event_id, occurred,

@@ -11,6 +11,7 @@ from ..models import Attendance, Driver, Route, Stop, Student, Trip, User, Vehic
 from ..operations import announce_delay, check_approaching, check_missed_boardings, estimate_arrival, student_state
 from ..schemas import TripUpdate, AttendanceOut, EtaOut, LocationCreate, LocationOut, TripCreate, TripOut, TripStart
 from ..services import (
+    lock_trip,
     audit,
     catalog_item,
     ensure_can_operate_trip,
@@ -184,7 +185,7 @@ def start_trip(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles(COORDINATOR, DRIVER)),
 ):
-    trip = trip_for(db, user, trip_id)
+    trip = lock_trip(db, trip_for(db, user, trip_id))
     ensure_can_operate_trip(user, trip)
     ensure_trip_status(trip, "scheduled")
     weather = catalog_item(db, "weather_conditions", data.weather_code)
@@ -212,7 +213,7 @@ def start_trip(
 
 @router.post("/{trip_id}/finish", response_model=TripOut, summary="Finalizar recorrido")
 def finish_trip(trip_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(COORDINATOR, DRIVER))):
-    trip = trip_for(db, user, trip_id)
+    trip = lock_trip(db, trip_for(db, user, trip_id))
     ensure_can_operate_trip(user, trip)
     ensure_trip_status(trip, "in_progress")
     on_board = [
@@ -262,7 +263,7 @@ def boarding_queue(trip_id: int, db: Session = Depends(get_db), user: User = Dep
     description="Saca de la pila el registro más reciente del recorrido y lo elimina. Útil si el conductor se equivocó.",
 )
 def undo_last_event(trip_id: int, db: Session = Depends(get_db), user: User = Depends(require_roles(*STAFF))):
-    trip = trip_for(db, user, trip_id)
+    trip = lock_trip(db, trip_for(db, user, trip_id))
     ensure_can_operate_trip(user, trip)
     ensure_trip_status(trip, "in_progress")
     history = Stack()
