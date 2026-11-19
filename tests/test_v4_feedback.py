@@ -216,3 +216,17 @@ def test_old_database_gets_the_new_campus_columns(tmp_path):
     engine.dispose()
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT plate, campus_id FROM vehicles").fetchall() == [("ABC123", None)]
+
+
+def test_huge_ids_and_filters_do_not_crash(client, coordinator):
+    """A number that does not fit in the database must give a clear 4xx, never a 500."""
+    huge = "99999999999999999999"
+    for path in (
+        f"/api/students/{huge}",
+        f"/api/trips/{huge}",
+        f"/api/routes/{huge}/stops",
+        f"/api/vehicles?campus_id={huge}",
+        f"/api/users/drivers?campus_id={huge}",
+    ):
+        response = client.get(path, headers=coordinator)
+        assert 400 <= response.status_code < 500, (path, response.status_code)

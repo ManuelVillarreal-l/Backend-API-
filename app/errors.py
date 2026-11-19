@@ -8,6 +8,7 @@ These handlers return them in Spanish, keeping the same JSON structure.
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError, IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .validation import FIELD_HINTS
@@ -101,4 +102,21 @@ def register_error_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content={"detail": detail},
             headers=getattr(exc, "headers", None),
+        )
+
+    @app.exception_handler(DataError)
+    @app.exception_handler(OverflowError)
+    async def out_of_range_data(request: Request, exc: Exception):
+        # e.g. /api/students/99999999999999999999: the number does not fit in the database column.
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Algún dato está fuera del rango permitido (por ejemplo, un número demasiado grande)."},
+        )
+
+    @app.exception_handler(IntegrityError)
+    async def conflicting_data(request: Request, exc: IntegrityError):
+        # Two requests at the same time trying to save the same unique value, or a broken reference.
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "No se pudo guardar: el dato ya existe o depende de otro registro. Revise e intente de nuevo."},
         )
