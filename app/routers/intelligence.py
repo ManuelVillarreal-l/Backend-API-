@@ -7,9 +7,16 @@ from sqlalchemy.orm import Session
 from .. import ai
 from ..auth import STAFF, COORDINATOR, get_current_user, require_roles
 from ..database import get_db
-from ..models import DelayPrediction, Route, User
-from ..schemas import CatalogRef, CurrentWeatherOut, DelayPredictionOut, DelayPredictionRequest
-from ..services import catalog_item, get_or_404
+from ..models import DelayPrediction, RoadCondition, Route, User, WeatherCondition
+from ..schemas import (
+    CatalogRef,
+    CurrentWeatherOut,
+    DelayPredictionOut,
+    DelayPredictionRequest,
+    PredictionHistoryItem,
+    PredictionPage,
+)
+from ..services import catalog_item, get_or_404, paginate
 
 router = APIRouter()
 
@@ -42,6 +49,57 @@ def predict_delay(data: DelayPredictionRequest, db: Session = Depends(get_db), u
     )
     db.commit()
     return result
+
+
+@router.get(
+    "/ai/predictions",
+    response_model=PredictionPage,
+    summary="IA: historial de predicciones guardadas",
+    description=(
+        "Cada predicción (hecha desde la pantalla de inteligencia o al iniciar un recorrido) queda guardada "
+        "en la tabla delay_predictions con quién la hizo, la ruta, el clima, la vía y el resultado."
+    ),
+)
+def prediction_history(
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(10, ge=5, le=100),
+    route_id: int | None = Query(None, ge=1),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(*STAFF)),
+):
+    query = db.query(DelayPrediction)
+    if route_id:
+        query = query.filter(DelayPrediction.route_id == route_id)
+    if user.role.code != COORDINATOR:
+        query = query.filter(DelayPrediction.created_by == user.id)
+    result = paginate(query.order_by(DelayPrediction.created_at.desc(), DelayPrediction.id.desc()), page, page_size)
+    routes = {r.id: r.name for r in db.query(Route).all()}
+    weathers = {w.id: w.name for w in db.query(WeatherCondition).all()}
+    roads = {r.id: r.name for r in db.query(RoadCondition).all()}
+    authors = {
+        u.id: u.full_name
+        for u in db.query(User).filter(User.id.in_({p.created_by for p in result["rows"] if p.created_by})).all()
+    }
+    return PredictionPage(
+        items=[
+            PredictionHistoryItem(
+                id=p.id,
+                created_at=p.created_at,
+                route_name=routes.get(p.route_id),
+                weather=weathers.get(p.weather_id, "—"),
+                road_condition=roads.get(p.road_condition_id, "—"),
+                stops_remaining=p.stops_remaining,
+                predicted_minutes=p.predicted_minutes,
+                model=p.model,
+                created_by=authors.get(p.created_by) if p.created_by else "Sistema (al iniciar el recorrido)",
+            )
+            for p in result["rows"]
+        ],
+        total=result["total"],
+        page=result["page"],
+        page_size=page_size,
+        pages=result["pages"],
+    )
 
 
 @router.get(
