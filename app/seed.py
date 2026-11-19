@@ -183,12 +183,15 @@ def seed_demo(db) -> None:
         m.Campus(school_id=school.id, name="Sede Santa Lucía", address="Vereda Santa Lucía",
                  latitude=1.1250, longitude=-77.1530),
     ]
+    db.add_all(campuses)
+    db.flush()
+    # Each bus belongs to a campus: the first two work in Sede Principal, the third in Santa Lucía.
     vehicles = [
-        m.Vehicle(plate="ABC123", brand="Chevrolet NPR", model_year=2019, capacity=30),
-        m.Vehicle(plate="XYZ789", brand="Hyundai County", model_year=2021, capacity=28),
-        m.Vehicle(plate="KLM456", brand="Toyota Coaster", model_year=2018, capacity=25),
+        m.Vehicle(plate="ABC123", brand="Chevrolet NPR", model_year=2019, capacity=30, campus_id=campuses[0].id),
+        m.Vehicle(plate="XYZ789", brand="Hyundai County", model_year=2021, capacity=28, campus_id=campuses[0].id),
+        m.Vehicle(plate="KLM456", brand="Toyota Coaster", model_year=2018, capacity=25, campus_id=campuses[1].id),
     ]
-    db.add_all(campuses + vehicles)
+    db.add_all(vehicles)
     db.flush()
 
     # Users ------------------------------------------------------------------
@@ -212,7 +215,7 @@ def seed_demo(db) -> None:
     for index, (driver, license_number) in enumerate(zip(drivers, ["10852501", "10852502", "10852503"])):
         db.add(m.Driver(user_id=driver.id, license_number=license_number, license_category="C2",
                         license_expires_on=date(2028, 6, 30) if index != 2 else date(2027, 3, 15),
-                        vehicle_id=vehicles[index].id))
+                        vehicle_id=vehicles[index].id, campus_id=vehicles[index].campus_id))
 
     # Routes, stops, segments --------------------------------------------------
     routes, route_stop_lists = [], []

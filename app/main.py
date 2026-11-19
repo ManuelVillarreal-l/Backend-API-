@@ -9,7 +9,7 @@ from sqlalchemy import text  # noqa: E402
 
 import logging  # noqa: E402
 
-from .database import DB_ERROR, DB_MODE, Base, SessionLocal, engine  # noqa: E402
+from .database import DB_ERROR, DB_MODE, Base, SessionLocal, add_missing_columns, engine  # noqa: E402
 from .docs_es import register_spanish_docs  # noqa: E402
 from .errors import register_error_handlers  # noqa: E402
 from .routers import (  # noqa: E402
@@ -33,6 +33,7 @@ MAX_BODY_BYTES = 64 * 1024  # 64 KB: no form of this system needs more
 STARTUP_ERROR: str | None = None
 try:
     Base.metadata.create_all(bind=engine)
+    add_missing_columns(engine)
     with SessionLocal() as db:
         seed_demo(db)
 except Exception as error:  # noqa: BLE001

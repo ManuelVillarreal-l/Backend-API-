@@ -70,3 +70,31 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Columns added after the first version. create_all() only creates missing tables, so an
+# existing database receives these columns here (nullable, so no data is lost).
+NEW_COLUMNS = {
+    "vehicles": {"campus_id": "INTEGER REFERENCES campuses(id) ON DELETE SET NULL"},
+    "drivers": {"campus_id": "INTEGER REFERENCES campuses(id) ON DELETE SET NULL"},
+}
+
+
+def add_missing_columns(bind) -> list[str]:
+    """ALTER TABLE ... ADD COLUMN for every column of NEW_COLUMNS that does not exist yet."""
+    from sqlalchemy import inspect
+
+    inspector = inspect(bind)
+    added = []
+    with bind.begin() as connection:
+        for table, columns in NEW_COLUMNS.items():
+            if not inspector.has_table(table):
+                continue
+            existing = {column["name"] for column in inspector.get_columns(table)}
+            for column, definition in columns.items():
+                if column not in existing:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+                    added.append(f"{table}.{column}")
+    if added:
+        log.info("Added columns: %s", ", ".join(added))
+    return added

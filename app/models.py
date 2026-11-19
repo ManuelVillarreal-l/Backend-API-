@@ -144,12 +144,19 @@ class Vehicle(Base):
     brand: Mapped[str] = mapped_column(String(40))
     model_year: Mapped[int] = mapped_column(Integer)
     capacity: Mapped[int] = mapped_column(Integer)
+    # Campus where the bus works: routes and trips of a campus only offer its own buses.
+    campus_id: Mapped[int | None] = mapped_column(ForeignKey("campuses.id", ondelete="SET NULL"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    campus = relationship("Campus", lazy="joined")
     __table_args__ = (
         CheckConstraint("capacity BETWEEN 1 AND 60", name="ck_vehicles_capacity"),
         CheckConstraint("model_year BETWEEN 1990 AND 2100", name="ck_vehicles_year"),
     )
+
+    @property
+    def campus_name(self) -> str | None:
+        return self.campus.name if self.campus else None
 
 
 # ======================================================================
@@ -199,9 +206,12 @@ class Driver(Base):
     license_category: Mapped[str] = mapped_column(String(2))
     license_expires_on: Mapped[date] = mapped_column(Date)
     vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True)
+    # Campus where the driver works: trips of a campus only offer its own drivers.
+    campus_id: Mapped[int | None] = mapped_column(ForeignKey("campuses.id", ondelete="SET NULL"), nullable=True)
 
     user = relationship("User", lazy="joined")
     vehicle = relationship("Vehicle", lazy="joined")
+    campus = relationship("Campus", lazy="joined")
     __table_args__ = (CheckConstraint("license_category IN ('B1','B2','B3','C1','C2','C3')", name="ck_drivers_category"),)
 
 
