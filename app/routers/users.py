@@ -1,13 +1,13 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..auth import COORDINATOR, DRIVER, hash_password, require_roles
 from ..database import get_db
-from ..models import Driver, Role, User, Vehicle
-from ..schemas import UserUpdate, DriverCreate, DriverOut, UserCreate, UserOut, UserStatusUpdate
-from ..services import audit, catalog_item, get_or_404
+from ..models import Campus, Driver, Role, User, Vehicle
+from ..schemas import UserUpdate, DriverCreate, DriverOut, UserCreate, UserOut, UserPage, UserStatusUpdate
+from ..services import audit, catalog_item, get_or_404, paginate
 from ..structures.circular_doubly_list import CircularDoublyList
 
 router = APIRouter()
@@ -20,6 +20,45 @@ def list_users(role: str | None = None, db: Session = Depends(get_db), user=Depe
     if role:
         query = query.filter(Role.code == role)
     return query.order_by(User.last_name, User.first_name).all()
+
+
+@router.get(
+    "/paged",
+    response_model=UserPage,
+    summary="Listar usuarios por páginas (solo coordinador)",
+    description="Trae solo la página pedida. Filtros opcionales: rol, texto (nombre, correo o documento) y estado.",
+)
+def list_users_paged(
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(10, ge=5, le=100),
+    role: str | None = Query(None, max_length=30, pattern=r"^[a-z_]*$"),
+    q: str | None = Query(None, max_length=60, pattern=r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9@._ -]*$"),
+    active: bool | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(coordinator_only),
+):
+    query = db.query(User).join(Role)
+    if role:
+        query = query.filter(Role.code == role)
+    if q and q.strip():
+        for word in q.split():
+            pattern = f"%{word}%"
+            query = query.filter(
+                User.first_name.ilike(pattern)
+                | User.last_name.ilike(pattern)
+                | User.email.ilike(pattern)
+                | User.document_number.ilike(pattern)
+            )
+    if active is not None:
+        query = query.filter(User.active.is_(active))
+    result = paginate(query.order_by(User.last_name, User.first_name, User.id), page, page_size)
+    return UserPage(
+        items=[UserOut.model_validate(u) for u in result["rows"]],
+        total=result["total"],
+        page=result["page"],
+        page_size=page_size,
+        pages=result["pages"],
+    )
 
 
 @router.post("/", response_model=UserOut, status_code=201, summary="Crear usuario (solo coordinador)")
@@ -96,12 +135,21 @@ def driver_out(driver: Driver) -> DriverOut:
         license_expires_on=driver.license_expires_on,
         license_valid=driver.license_expires_on >= date.today(),
         vehicle_plate=driver.vehicle.plate if driver.vehicle else None,
+        campus_id=driver.campus_id,
+        campus_name=driver.campus.name if driver.campus else None,
     )
 
 
 @router.get("/drivers", response_model=list[DriverOut], summary="Conductores y sus licencias")
-def list_drivers(db: Session = Depends(get_db), user=Depends(coordinator_only)):
-    return [driver_out(d) for d in db.query(Driver).order_by(Driver.id).all()]
+def list_drivers(
+    campus_id: int | None = Query(None, ge=1, description="Solo los conductores de esta sede"),
+    db: Session = Depends(get_db),
+    user=Depends(coordinator_only),
+):
+    query = db.query(Driver).join(User, Driver.user_id == User.id).filter(User.active.is_(True))
+    if campus_id:
+        query = query.filter(Driver.campus_id == campus_id)
+    return [driver_out(d) for d in query.order_by(Driver.id).all()]
 
 
 @router.post("/drivers", response_model=DriverOut, status_code=201, summary="Registrar licencia de un conductor")
@@ -115,8 +163,12 @@ def create_driver(data: DriverCreate, db: Session = Depends(get_db), user=Depend
         raise HTTPException(409, "Ese número de licencia ya está registrado.")
     if data.license_expires_on < date.today():
         raise HTTPException(422, "La licencia está vencida.")
+    if data.campus_id:
+        get_or_404(db, Campus, data.campus_id, "Sede")
     if data.vehicle_id:
-        get_or_404(db, Vehicle, data.vehicle_id, "Vehículo")
+        vehicle = get_or_404(db, Vehicle, data.vehicle_id, "Vehículo")
+        if data.campus_id and vehicle.campus_id and vehicle.campus_id != data.campus_id:
+            raise HTTPException(422, f"El vehículo {vehicle.plate} pertenece a otra sede.")
     driver = Driver(**data.model_dump())
     db.add(driver)
     db.flush()

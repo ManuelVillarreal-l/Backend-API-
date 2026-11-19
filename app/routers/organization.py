@@ -1,6 +1,6 @@
 """Schools, campuses and vehicles. Includes the school hierarchy as an N-ary tree."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..auth import COORDINATOR, get_current_user, require_roles
@@ -74,14 +74,26 @@ def school_tree(db: Session = Depends(get_db), user=Depends(coordinator_only)):
 
 
 @router.get("/vehicles", response_model=list[VehicleOut], summary="Listar vehículos")
-def list_vehicles(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return db.query(Vehicle).order_by(Vehicle.plate).all()
+def list_vehicles(
+    campus_id: int | None = Query(None, ge=1, description="Solo los buses de esta sede"),
+    active_only: bool = False,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    query = db.query(Vehicle)
+    if campus_id:
+        query = query.filter(Vehicle.campus_id == campus_id)
+    if active_only:
+        query = query.filter(Vehicle.active.is_(True))
+    return query.order_by(Vehicle.plate).all()
 
 
 @router.post("/vehicles", response_model=VehicleOut, status_code=201, summary="Registrar vehículo")
 def create_vehicle(data: VehicleCreate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
     if db.query(Vehicle).filter(Vehicle.plate == data.plate).first():
         raise HTTPException(409, "Ya existe un vehículo con esa placa.")
+    if data.campus_id:
+        get_or_404(db, Campus, data.campus_id, "Sede")
     vehicle = Vehicle(**data.model_dump())
     db.add(vehicle)
     db.flush()
@@ -139,8 +151,12 @@ def delete_campus(campus_id: int, db: Session = Depends(get_db), user=Depends(co
     campus = get_or_404(db, Campus, campus_id, "Sede")
     students = db.query(Student).filter(Student.campus_id == campus.id).count()
     routes = db.query(Route).filter(Route.campus_id == campus.id).count()
-    if students or routes:
-        raise HTTPException(409, f"No se puede eliminar: la sede tiene {students} estudiante(s) y {routes} ruta(s).")
+    vehicles = db.query(Vehicle).filter(Vehicle.campus_id == campus.id).count()
+    if students or routes or vehicles:
+        raise HTTPException(
+            409,
+            f"No se puede eliminar: la sede tiene {students} estudiante(s), {routes} ruta(s) y {vehicles} bus(es).",
+        )
     db.delete(campus)
     audit(db, user, "delete", "campuses", campus_id)
     db.commit()
@@ -150,6 +166,8 @@ def delete_campus(campus_id: int, db: Session = Depends(get_db), user=Depends(co
 @router.put("/vehicles/{vehicle_id}", response_model=VehicleOut, summary="Editar vehículo")
 def update_vehicle(vehicle_id: int, data: VehicleUpdate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
     vehicle = get_or_404(db, Vehicle, vehicle_id, "Vehículo")
+    if data.campus_id:
+        get_or_404(db, Campus, data.campus_id, "Sede")
     fields = apply_changes(vehicle, data)
     audit(db, user, "update", "vehicles", vehicle.id, ", ".join(fields) or None)
     db.commit()

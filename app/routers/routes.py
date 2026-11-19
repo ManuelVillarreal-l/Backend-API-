@@ -10,7 +10,7 @@ from ..auth import COORDINATOR, get_current_user, require_roles
 from ..database import get_db
 from ..models import Campus, Route, RouteSegment, Stop, Student, Vehicle
 from ..schemas import RouteUpdate, StopUpdate, RouteCreate, RouteOptimizationOut, RouteOut, SegmentCreate, SegmentOut, StopCreate, StopOut
-from ..services import audit, get_or_404, route_or_404, route_stops
+from ..services import audit, ensure_vehicle_fits_campus, get_or_404, route_or_404, route_stops
 from ..structures.doubly_linked_list import DoublyLinkedList
 from ..structures.graph import Graph
 
@@ -27,7 +27,7 @@ def list_routes(db: Session = Depends(get_db), user=Depends(get_current_user)):
 def create_route(data: RouteCreate, db: Session = Depends(get_db), user=Depends(coordinator_only)):
     get_or_404(db, Campus, data.campus_id, "Sede")
     if data.vehicle_id:
-        get_or_404(db, Vehicle, data.vehicle_id, "Vehículo")
+        ensure_vehicle_fits_campus(get_or_404(db, Vehicle, data.vehicle_id, "Vehículo"), data.campus_id)
     if db.query(Route).filter(Route.name == data.name).first():
         raise HTTPException(409, "Ya existe una ruta con ese nombre.")
     route = Route(**data.model_dump())
@@ -223,7 +223,7 @@ def update_route(route_id: int, data: RouteUpdate, db: Session = Depends(get_db)
         if db.query(Route).filter(Route.name == changes["name"], Route.id != route.id).first():
             raise HTTPException(409, "Ya existe una ruta con ese nombre.")
     if changes.get("vehicle_id"):
-        get_or_404(db, Vehicle, changes["vehicle_id"], "Vehículo")
+        ensure_vehicle_fits_campus(get_or_404(db, Vehicle, changes["vehicle_id"], "Vehículo"), route.campus_id)
     for field, value in changes.items():
         if value is not None or field in ("vehicle_id", "description"):
             setattr(route, field, value)

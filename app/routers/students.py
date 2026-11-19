@@ -15,8 +15,8 @@ from .. import ai
 from ..auth import COORDINATOR, GUARDIAN, get_current_user, require_roles
 from ..database import get_db
 from ..models import Attendance, Campus, Route, Stop, Student, StudentGuardian, User
-from ..schemas import StudentUpdate, AbsenceRiskOut, CatalogRef, AttendanceOut, GuardianOut, StudentCreate, StudentOut
-from ..services import audit, catalog_item, ensure_can_see_student, get_or_404, visible_students_query
+from ..schemas import StudentUpdate, AbsenceRiskOut, CatalogRef, AttendanceOut, GuardianOut, StudentCreate, StudentOut, StudentPage
+from ..services import audit, catalog_item, ensure_can_see_student, get_or_404, paginate, visible_students_query
 from ..structures.avl import AVLTree
 
 router = APIRouter()
@@ -64,6 +64,46 @@ def normalize(text: str) -> str:
 def list_students(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     students = visible_students_query(db, user).order_by(Student.last_name, Student.first_name).all()
     return [student_out(s) for s in students]
+
+
+@router.get(
+    "/paged",
+    response_model=StudentPage,
+    summary="Listar estudiantes por páginas",
+    description=(
+        "Solo trae de la base de datos la página pedida (10, 25 o 50 filas), así la tabla no se "
+        "demora aunque haya miles de estudiantes. Filtros opcionales: nombre, ruta, sede y estado."
+    ),
+)
+def list_students_paged(
+    page: int = Query(1, ge=1, le=100000),
+    page_size: int = Query(10, ge=5, le=100),
+    q: str | None = Query(None, max_length=50, pattern=r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü ]*$"),
+    route_id: int | None = Query(None, ge=1),
+    campus_id: int | None = Query(None, ge=1),
+    active: bool | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    query = visible_students_query(db, user)
+    if q and q.strip():
+        for word in q.split():
+            pattern = f"%{word}%"
+            query = query.filter(Student.first_name.ilike(pattern) | Student.last_name.ilike(pattern))
+    if route_id:
+        query = query.filter(Student.route_id == route_id)
+    if campus_id:
+        query = query.filter(Student.campus_id == campus_id)
+    if active is not None:
+        query = query.filter(Student.active.is_(active))
+    result = paginate(query.order_by(Student.last_name, Student.first_name, Student.id), page, page_size)
+    return StudentPage(
+        items=[student_out(s) for s in result["rows"]],
+        total=result["total"],
+        page=result["page"],
+        page_size=page_size,
+        pages=result["pages"],
+    )
 
 
 @router.get(

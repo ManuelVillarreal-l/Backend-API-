@@ -177,3 +177,22 @@ def route_stops(db: Session, route_id: int) -> list[Stop]:
 
 def route_or_404(db: Session, route_id: int) -> Route:
     return get_or_404(db, Route, route_id, "Ruta")
+
+
+def paginate(query, page: int, page_size: int) -> dict:
+    """Read only one page of rows. Returns rows, total, page (clamped to the last one) and pages."""
+    total = query.order_by(None).count()
+    pages = max(1, -(-total // page_size))
+    page = min(page, pages)
+    rows = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {"rows": rows, "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+
+def ensure_vehicle_fits_campus(vehicle, campus_id: int) -> None:
+    """A route or trip of a campus can only use an active bus of that same campus."""
+    from fastapi import HTTPException
+
+    if not vehicle.active:
+        raise HTTPException(422, f"El vehículo {vehicle.plate} está desactivado.")
+    if vehicle.campus_id and vehicle.campus_id != campus_id:
+        raise HTTPException(422, f"El vehículo {vehicle.plate} pertenece a otra sede ({vehicle.campus_name}).")

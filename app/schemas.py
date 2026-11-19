@@ -134,6 +134,7 @@ class DriverCreate(Schema):
     license_category: str = Field(pattern=r"^(B1|B2|B3|C1|C2|C3)$", min_length=2, max_length=2)
     license_expires_on: date
     vehicle_id: Id | None = None
+    campus_id: Id | None = None
 
 
 class DriverOut(OrmSchema):
@@ -145,6 +146,8 @@ class DriverOut(OrmSchema):
     license_expires_on: date
     license_valid: bool
     vehicle_plate: str | None
+    campus_id: int | None = None
+    campus_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +192,7 @@ class VehicleCreate(Schema):
     brand: Label
     model_year: int = Field(ge=1990, le=2100)
     capacity: int = Field(ge=1, le=60)
+    campus_id: Id | None = None
 
     @field_validator("plate", mode="before")
     @classmethod
@@ -203,6 +207,8 @@ class VehicleOut(OrmSchema):
     model_year: int
     capacity: int
     active: bool
+    campus_id: int | None = None
+    campus_name: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +533,7 @@ class VehicleUpdate(Schema):
     brand: Label | None = None
     model_year: int | None = Field(default=None, ge=1990, le=2100)
     capacity: int | None = Field(default=None, ge=1, le=60)
+    campus_id: Id | None = None
     active: bool | None = None
 
 
@@ -567,3 +574,45 @@ class AttendanceMatrixOut(BaseModel):
     cells: list[list[str]]
     present_per_day: list[int]
     legend: dict[str, str]
+
+
+# ---------------------------------------------------------------------------
+# Pagination
+# ---------------------------------------------------------------------------
+
+class StudentPage(BaseModel):
+    """One page of a long list: the table loads 10, 25 or 50 rows at a time."""
+
+    items: list[StudentOut]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class UserPage(BaseModel):
+    items: list[UserOut]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class PredictionHistoryItem(BaseModel):
+    id: int
+    created_at: datetime
+    route_name: str | None
+    weather: str
+    road_condition: str
+    stops_remaining: int
+    predicted_minutes: float
+    model: str
+    created_by: str | None
+
+
+class PredictionPage(BaseModel):
+    items: list[PredictionHistoryItem]
+    total: int
+    page: int
+    page_size: int
+    pages: int
