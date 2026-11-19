@@ -113,6 +113,16 @@ PostgreSQL set `TEST_DATABASE_URL` to an empty database.
 In Swagger click **Autorizar**, type the e-mail in `username` and the normal password: the page
 converts it to SHA-256 before sending it (the same as the web app).
 
+## Changes after the professor's review (v4)
+| Request | Where |
+|---|---|
+| Campuses (sedes) created from the app; buses and drivers belong to a campus | `POST /api/campuses`, `GET /api/vehicles?campus_id`, `GET /api/users/drivers?campus_id` |
+| A route or trip only accepts buses and drivers of its own campus | `app/services.py` → `ensure_vehicle_fits_campus`, `app/routers/trips.py` |
+| Long tables load by pages (10, 25, 50) | `GET /api/students/paged`, `GET /api/users/paged` |
+| AI predictions are saved and can be consulted | `GET /api/ai/predictions` (table `delay_predictions`) |
+| Automatic warnings: possible delay and child who did not board | `app/operations.py` → `announce_delay`, `check_missed_boardings` |
+| Existing databases receive the new columns without losing data | `app/database.py` → `add_missing_columns` |
+
 ## Deployment
 `render.yaml` defines the API service and the PostgreSQL database for Render
 (`ACCESS_TOKEN_EXPIRE_MINUTES=30`). `.env` is excluded by `.gitignore`.
