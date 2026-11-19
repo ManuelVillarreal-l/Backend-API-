@@ -9,6 +9,7 @@ from .models import Attendance, Notification, Stop, Student, Trip, User, Vehicle
 from .services import (
     audit,
     catalog_item,
+    coordinators,
     ensure_can_operate_trip,
     ensure_trip_status,
     guardians_of,
@@ -20,6 +21,7 @@ from .structures.linked_list import LinkedList
 
 APPROACH_RADIUS_KM = 0.6
 DEFAULT_SPEED_KMH = 25.0
+DELAY_ALERT_MINUTES = 8  # predicted delays from this value on are announced to the guardians
 
 
 def local_time_text(moment: datetime) -> str:
@@ -109,15 +111,86 @@ def register_event(
 # GPS
 # ---------------------------------------------------------------------------
 
+def notify_missed_boarding(db: Session, trip: Trip, student: Student, stop_name: str) -> bool:
+    """Tell the guardians and the coordinators (once per trip) that a child did not get on the bus."""
+    kind = f"missed:{trip.id}:{student.id}"
+    if db.query(Notification).filter(Notification.kind == kind).first():
+        return False
+    notify(
+        db,
+        guardians_of(db, [student.id]) + coordinators(db),
+        kind,
+        f"{student.first_name} no subió al bus",
+        f"El bus pasó por {stop_name} y {student.full_name} no abordó. Si no va a asistir, avise al colegio.",
+    )
+    return True
+
+
+def check_missed_boardings(db: Session, trip: Trip, passed_stop_ids: list[int]) -> int:
+    """Students of stops the bus already left behind and who are still waiting = did not board."""
+    if trip.direction != "outbound" or not passed_stop_ids:
+        return 0
+    names = {s.id: s.name for s in route_stops(db, trip.route_id)}
+    waiting = (
+        db.query(Student)
+        .filter(Student.route_id == trip.route_id, Student.active.is_(True), Student.stop_id.in_(passed_stop_ids))
+        .all()
+    )
+    return sum(
+        notify_missed_boarding(db, trip, s, names.get(s.stop_id, "su parada"))
+        for s in waiting
+        if student_state(db, trip.id, s.id) == "pending"
+    )
+
+
+def announce_delay(db: Session, user: User, trip: Trip, weather, road) -> dict:
+    """At the start of a trip the AI predicts the delay; it is saved and, if it is relevant,
+    the guardians and the coordinators receive a warning."""
+    from . import ai
+    from .models import DelayPrediction, Route
+
+    stops = route_stops(db, trip.route_id)
+    hour = (utc_now().hour - 5) % 24  # Colombia time
+    result = ai.predict_delay(db, weather, road, len(stops), hour)
+    db.add(
+        DelayPrediction(
+            route_id=trip.route_id,
+            trip_id=trip.id,
+            weather_id=weather.id,
+            road_condition_id=road.id,
+            stops_remaining=len(stops),
+            predicted_minutes=result["estimated_delay_minutes"],
+            model=result["model"],
+            created_by=user.id,
+        )
+    )
+    minutes = result["estimated_delay_minutes"]
+    if minutes >= DELAY_ALERT_MINUTES:
+        route = db.get(Route, trip.route_id)
+        student_ids = [s.id for s in db.query(Student).filter(Student.route_id == trip.route_id, Student.active.is_(True))]
+        notify(
+            db,
+            guardians_of(db, student_ids) + coordinators(db),
+            f"delay:{trip.id}",
+            "Posible retraso del bus",
+            f"La {route.name} podría llegar unos {round(minutes)} min tarde por {weather.name.lower()} "
+            f"y vía {road.name.lower()} (predicción de la IA).",
+        )
+    return result
+
+
 def check_approaching(db: Session, trip: Trip, location: VehicleLocation) -> int:
-    """Notify guardians once when the bus gets close to the stop where their child waits."""
+    """Notify guardians once when the bus gets close to the stop where their child waits.
+    When the bus reaches a stop, the children of the previous stops who did not board are reported."""
     if trip.direction != "outbound":
         return 0
     sent = 0
     students = db.query(Student).filter(Student.route_id == trip.route_id, Student.active.is_(True)).all()
-    for stop in route_stops(db, trip.route_id):
+    stops = route_stops(db, trip.route_id)
+    for index, stop in enumerate(stops):
         if haversine_km(location.latitude, location.longitude, stop.latitude, stop.longitude) > APPROACH_RADIUS_KM:
             continue
+        sent += check_missed_boardings(db, trip, [s.id for s in stops[: max(0, index - 1)]])
         waiting = [s for s in students if s.stop_id == stop.id and student_state(db, trip.id, s.id) == "pending"]
         if not waiting:
             continue
